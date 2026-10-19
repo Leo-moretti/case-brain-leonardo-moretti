@@ -42,6 +42,12 @@ Uma entrada por sessão, da mais antiga para a mais recente. Formato e regras em
     - Um teste esperava 2.140 usuários de Pix numa tabela que conta aprovado ou estornado (2.172). As duas definições ficaram explícitas.
     - O README atribuía ao candidato conferências que a IA tinha feito. Foi reescrito.
     - Avisos do dashboard (parâmetro depreciado, coluna de tipo misto) foram corrigidos.
+  - **Avaliação do candidato sobre o desempenho da IA:** o candidato atribui a qualidade e a agilidade desta sessão às configurações do agente que ele já tinha preparado antes: instruções globais e de projeto, regras de permissão e skills. Nesta sessão, atuaram de forma verificável:
+    - as instruções de projeto (`AGENTS.md`/`CLAUDE.md`), que exigem registrar o uso de IA neste arquivo;
+    - as instruções globais do candidato, que proíbem atribuir autoria à IA em commits e textos gerados;
+    - as regras de permissão do ambiente, que bloquearam leitura e escrita de arquivos `.env*` e chamadas de rede não autorizadas. Por isso as variáveis de ambiente foram documentadas no README, em vez de num `.env.example`.
+
+    Nenhuma skill foi acionada explicitamente nesta sessão.
   - **Não verificado pela IA:** chamada real ao Gemini (não havia chave) e build da imagem Docker (Docker indisponível no WSL).
   - **Revisão do candidato — pendente**, iniciada após esta entrada. Preencher com o resultado:
     - [ ] Números da apresentação e da recomendação conferidos com `python -m pipeline.eda`
