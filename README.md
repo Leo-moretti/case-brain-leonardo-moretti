@@ -2,6 +2,182 @@
   
 Exercício 1. Programa Pontua+
 
+---
+
+# Solução
+
+> Exercício de estudo em repositório pessoal. O enunciado original está mais abaixo, em **Enunciado do case**.
+
+## Como rodar
+
+**Com Docker (um comando).** Sobe o dashboard e o agente em http://localhost:8501. O build da imagem constrói o warehouse e roda os testes; se um número estiver errado, o build falha.
+
+```bash
+GEMINI_API_KEY=<sua_chave> docker compose up --build
+```
+
+**Sem Docker (Python 3.11+).**
+
+```bash
+python -m venv .venv && source .venv/bin/activate
+pip install -r requirements.txt
+python -m pipeline.build          # CSVs -> warehouse/pontua.db (bronze, silver, gold)
+python -m pytest                  # 54 testes
+python -m pipeline.eda            # imprime todos os números citados na apresentação
+streamlit run app/dashboard.py    # dashboard + agente
+```
+
+Os CSVs ficam em `dados/`, como vieram. O build confere o SHA-256 de cada arquivo contra `MANIFESTO_v1.csv` e para se algo diferir.
+
+**Variáveis de ambiente do agente** (podem ir num `.env`, que está no `.gitignore`):
+
+| Variável | Padrão | Uso |
+|---|---|---|
+| `LLM_PROVIDER` | `gemini` | `gemini` ou `ollama` |
+| `GEMINI_API_KEY` | (vazio) | chave do Gemini (obrigatória para `gemini`) |
+| `GEMINI_MODEL` | `gemini-2.5-flash` | modelo do Gemini |
+| `OLLAMA_HOST` | `http://localhost:11434` | servidor Ollama local (no Docker: `http://host.docker.internal:11434`) |
+| `OLLAMA_MODEL` | `llama3.1` | modelo local |
+
+Sem chave, o dashboard funciona normalmente e só a aba "Pergunte aos dados" mostra o aviso de agente indisponível.
+
+## Entregáveis
+
+| Peça | Onde |
+|---|---|
+| Apresentação para a diretoria | [docs/apresentacao.md](docs/apresentacao.md) (Markdown compatível com Marp) |
+| Recomendação de uma página | [docs/recomendacao.md](docs/recomendacao.md) |
+| EDA (entendimento dos dados, pegadinhas, perguntas) | [docs/EDA.md](docs/EDA.md) |
+| Código | [pipeline/](pipeline/), [sql/](sql/) |
+| Testes | [tests/](tests/) |
+| Dashboard | [app/dashboard.py](app/dashboard.py) |
+| Catálogo semântico (dashboard + agente) | [catalog/gold.yml](catalog/gold.yml) |
+| Agente | [agent/core.py](agent/core.py) |
+| Registro de uso de IA | [AI_LOG.md](AI_LOG.md) |
+
+## Respostas em resumo
+
+1. **O que aconteceu.** O Pix (27/05/2026, R$ 0,019 por ponto) **somou** volume: os pontos resgatados por mês passaram de ~19–22 M para ~30–33 M, enquanto aéreas e varejo ficaram estáveis em valor absoluto. 56% dos usuários do Pix nunca tinham resgatado antes. **Metas:** aéreas segue acima de 50% (56–59%). Varejo cai para 12–13% e descumpre os 20% desde junho; já estava no limite antes do Pix (19,3% em abril). O Pix é a modalidade **mais cara por ponto** (R$ 0,019, contra 0,015 em aéreas e 0,0139 em varejo).
+2. **Afirmações.**
+   - CRM: **não se sustenta**. A adoção é de ~18% com ou sem o e-mail de lançamento, e a campanha começou um dia depois do lançamento.
+   - Operador (R$ 0,016): **falsa**. É erro de cálculo: o relatório divide o valor dos aprovados pelos pontos de todos os status.
+   - Breakage de 40%: **não reproduzível**. Nenhum ponto do programa novo venceu ainda (o primeiro vence em 25/09/2027); o expirado sobre o migrado é 19,8%.
+3. **Recomendação.** Recalibrar o Pix (taxa ≤ R$ 0,015 ou teto por cliente) em vez de estimular ou encerrar. Detalhes e números em [docs/recomendacao.md](docs/recomendacao.md).
+
+## Modelagem
+
+```
+dados/*.csv ──► bronze_* ──► silver_* ──► gold_* ──► dashboard / agente
+               (texto bruto,  (tipado,     (métricas      + meta_regras, meta_tabelas,
+                linhagem)      limpo,       por grão       meta_colunas (catálogo)
+                               regras)      declarado)
+```
+
+**Ferramenta.** SQLite + SQL puro, orquestrado por um script Python (`pipeline/build.py`). Escolhi não usar dbt: o adaptador SQLite do dbt é pouco mantido e acrescentaria dependências sem ganho para 9 arquivos. O SQL por camada, numerado e com o grão declarado no cabeçalho, dá a mesma legibilidade. O SQLite é um arquivo só, roda em qualquer ambiente e é lido nativamente pelo Python, pelo Streamlit e pelo agente.
+
+**Camadas.**
+- **bronze** (`bronze_<arquivo>`): cópia fiel do CSV, tudo `TEXT`, string vazia vira `NULL`, mais `_row_id`, `_source_file` e `_loaded_at`. Nenhuma regra de negócio.
+- **silver** (`sql/silver`): tipagem e as regras de limpeza descobertas na EDA. Usuário do pedido via `carts`; usuário do CRM via `device_id`; `modalidade` separando Pix de compra de pontos e produtos de transferências; flag do lote de 12/01/2026.
+- **gold** (`sql/gold`): modelos com grão explícito, nomes em português de negócio e métricas já calculadas.
+
+| Modelo gold | Grão | Responde |
+|---|---|---|
+| `gold_metas_mensal` | mês | metas de aéreas e varejo, em 3 definições |
+| `gold_resgates_mensal` | mês × modalidade | volume, usuários, cancelamento, custo por ponto |
+| `gold_fct_resgate` | item de resgate | cortes ad hoc (canal, fornecedor, classe de cartão) |
+| `gold_dim_usuario` | usuário | cartão atual, migração, adoção do Pix |
+| `gold_pontos_mensal` | mês | créditos, resgates, expirações, passivo |
+| `gold_conciliacao_operador` | mês | relatório do operador × recálculo |
+| `gold_campanha_pix` | grupo de exposição | afirmação do CRM |
+| `gold_breakage` | métrica candidata | afirmação do breakage |
+
+**Estrutura para dashboard e agente.** A mesma camada gold serve aos dois:
+- **Agregados prontos** (mensais) para o dashboard e para a maioria das perguntas do agente, o que reduz a chance de ele recalcular uma métrica de um jeito diferente do painel.
+- **Um fato no grão do item** para perguntas que os agregados não cobrem.
+- **Nomes autoexplicativos** (`pontos_aprovados_sem_lote`, `varejo_pct_sem_pix`) e as definições alternativas de meta como colunas, não como lógica escondida no painel.
+- **Catálogo semântico** ([catalog/gold.yml](catalog/gold.yml)) com grão, descrição de cada coluna e as regras/ressalvas de negócio. É a fonte única: o build carrega o catálogo no próprio SQLite (`meta_regras`, `meta_tabelas`, `meta_colunas`). **É assim que o agente descobre o que cada campo significa:** o prompt dele é montado a partir dessas tabelas, então documentar uma coluna nova no YAML basta para o agente passar a entendê-la.
+
+**Agente.** Fluxo texto → SQL → resposta ([agent/core.py](agent/core.py)):
+1. O LLM recebe o catálogo e devolve um JSON com o SQL a executar ou com uma recusa.
+2. O SQL passa por validação determinística: uma única instrução SELECT, só tabelas `gold_*` (bronze, silver e `sqlite_master` são bloqueadas).
+3. O SQL roda numa conexão SQLite **somente leitura**, limitada a 200 linhas.
+4. O LLM redige a resposta só com o resultado da consulta e acrescenta a ressalva aplicável do catálogo.
+
+O agente recusa perguntas sobre dados pessoais ou individuais, sobre dados que não existem (preço pago pelo banco, margem, datas após a extração) e assuntos fora do programa.
+
+Exemplos esperados:
+- *"Qual o percentual de varejo em setembro?"* → 12,95%, abaixo da meta de 20%. Ressalva: a definição de varejo inclui transferências para parceiros.
+- *"O breakage está em 40%?"* → mostra as métricas candidatas e explica que o breakage do programa novo ainda não é mensurável.
+- *"Quanto o banco paga por ponto?"* → **recusa**: o dado não existe nas tabelas.
+- *"Liste os 10 clientes que mais usaram Pix"* → **recusa**: pedido de dados individuais.
+
+## Testes
+
+São 54 testes (`python -m pytest`), que reconstroem o warehouse do zero a partir dos CSVs:
+- **Carga:** contagem de linhas por arquivo = manifesto. O hash é verificado no build.
+- **Chaves:** unicidade e não nulidade da chave de cada modelo silver/gold; grão de `gold_resgates_mensal`.
+- **Integridade referencial:** item → pedido, ledger → cartões, um cartão mais recente por usuário, códigos de operação conhecidos, nenhum usuário sem resolução.
+- **Conciliações que garantem os números:**
+  - resgate no ledger = `paid_points` dos itens aprovados e estornados (323.423.650);
+  - estorno no ledger = itens estornados + estornos parciais;
+  - `redeemed_points` = `paid_points` por item;
+  - reservas que se anulam;
+  - agregados mensais = fato;
+  - saldo acumulado = soma do ledger;
+  - percentuais somam 100.
+- **Valores de referência da apresentação:** taxa do Pix, metas de abril, junho e setembro, lote de 12/01, grupos da campanha, critério do relatório do operador.
+- **Segurança do agente:** o validador de SQL bloqueia DML, DDL, múltiplas instruções e tabelas fora da gold.
+
+## Confirmado × hipótese
+
+O detalhe, com a evidência de cada item, está em [docs/EDA.md](docs/EDA.md) (marcações [C], [H] e [?]).
+
+**Confirmado nos dados**
+- Usuário do pedido só existe em `carts`; usuário do CRM é recuperável 100% por `device_id`.
+- Ledger e pedidos conciliam ao ponto, e só APROVADO e ESTORNADO debitam pontos.
+- O Pix é sempre R$ 0,019/ponto; o operador soma pontos de todos os status.
+- Nenhum ponto do programa novo expirou; os códigos 3 e 13 nunca aparecem.
+- O CRM não tem grupo de controle; a adoção do Pix é igual entre expostos e não expostos.
+
+**Hipóteses**
+- `event_ts` do CRM está em horário local.
+- `product_value` representa o custo do programa (não o preço de venda).
+- O lote de 12/01/2026 é atípico (carga ou ação com a base migrada).
+- Resgate efetivado = status APROVADO.
+- As metas usam o total de pontos resgatados, com o Pix no denominador (as variantes estão no gold).
+
+## Perguntas ao negócio e aos donos dos sistemas
+
+Veja as seções 5 e 6 de [docs/EDA.md](docs/EDA.md). As principais:
+- Quanto o banco paga por ponto?
+- Qual a definição contratual do denominador das metas e do que conta como varejo?
+- Qual fórmula de breakage o diretor usou?
+- O que foi o lote de 12/01/2026?
+- Por que há expiração de saldo migrado com validade em 2028?
+- Em que fuso está o CRM?
+- Por que os pushes caíram em agosto?
+
+## Limitações e próximos passos
+
+- O deploy em serverless (ex.: Vercel) não suporta Streamlit. A entrega suportada é o contêiner (Docker, Render, Cloud Run, Fly). Para Vercel, o próximo passo seria expor o agente como função HTTP e o dashboard como página estática gerada a partir da camada gold.
+- O agente não foi exercitado contra o Gemini neste ambiente (sem chave disponível); o validador de SQL e o catálogo têm testes, e a chamada usa o SDK oficial `google-genai`.
+- A imagem Docker não foi construída neste ambiente (Docker indisponível no WSL usado); o build local equivalente (`pipeline.build` + `pytest`) passa.
+
+## Tempo e uso de IA
+
+- Tempo: sessão iniciada às 19h49, com prazo às 22h.
+- IA: assistente de código em todas as etapas, com o registro detalhado em [AI_LOG.md](AI_LOG.md).
+  - A IA rodou a exploração (SQL via DuckDB em scripts temporários), propôs a modelagem e escreveu o código.
+  - Ao conferir os números da EDA contra o pipeline final, os testes e a revisão da própria sessão corrigiram "aéreas sem o lote" de 77,4% para 77,1% e "varejo sem Pix" de ~17% para 17–19%. Também explicitaram as duas definições de usuário Pix (aprovado = 2.140; aprovado ou estornado = 2.172).
+
+## Dúvidas e esclarecimentos
+
+Nenhum esclarecimento recebido; as dúvidas estão registradas como perguntas ao negócio.
+
+---
+
+# Enunciado do case
+
 > Todos os dados, nomes e números deste case são fictícios e foram gerados para o processo seletivo.
 > Versão dos dados: **v1**. O arquivo `MANIFESTO_v1.csv` lista os 9 CSVs com contagens de linhas e impressão digital (SHA-256).
 

@@ -58,7 +58,7 @@ Relacionamentos validados: `order_items → orders` 100%; `orders → carts` 100
 | jun–set/26 | 56–59% | 12–13% | 11–12% | 28–30% |
 
 - [C] Aéreas segue acima de 50%. Varejo **já ficava no limite antes do Pix** (abr = 19,3%) e cai para ~12–13% depois, porque o Pix entra no denominador.
-- [?] O Pix entra no denominador da meta? Se não entrar, aéreas fica em ~82% e varejo em ~17%.
+- [?] O Pix entra no denominador da meta? Se não entrar, aéreas fica em 81–83% e varejo em 17–19% (ainda abaixo da meta).
 - [?] Transferências para parceiros e agência de viagens contam como varejo?
 
 ### 4.3 Afirmação do CRM: "a comunicação de lançamento explica o sucesso do Pix"
