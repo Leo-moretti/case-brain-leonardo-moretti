@@ -4,21 +4,55 @@ Uma entrada por sessão, da mais antiga para a mais recente. Formato e regras em
 
 
 ### 2026-10-19T19:49-03:00 · Claude Code (Claude Opus 5.5)
-- **Pedido:** retomar o case (a conversa anterior não ficou registrada) e fazer EDA detalhada com perguntas técnicas, do case e de negócio; montar o warehouse SQLite com bronze/silver/gold, testes, Docker, dashboard e agente (Gemini ou modelo local), reprodutível, com último commit até 22h; não citar nenhum empregador ou cliente.
-- **O que a IA fez ou sugeriu:** conferiu os hashes contra o manifesto; perfilou os 9 CSVs e cruzou chaves com DuckDB em scripts temporários. Encontrou:
-  - `orders.user_id` vazio;
-  - Cashback misturando Pix e compra de pontos;
-  - varejo incluindo transferências para parceiros;
-  - lote de 1.520 resgates aéreos em 12/01/2026;
-  - expiração de migração inconsistente com `valid_until`;
-  - CRM sem grupo de controle;
-  - relatório do operador somando pontos de todos os status.
 
-  Escreveu `docs/EDA.md`, o pipeline SQL (sem dbt, por simplicidade), o catálogo semântico carregado no SQLite, 54 testes, o dashboard Streamlit, o agente texto→SQL restrito à gold com conexão somente leitura, o Dockerfile/compose, a apresentação, a recomendação e o README.
-- **O que o candidato conferiu, corrigiu ou rejeitou:** pediu que nenhum nome de empregador ou cliente aparecesse no repositório (a IA verificou com `git grep` antes do commit). Correções da própria sessão:
-  - números da EDA divergentes do pipeline (aéreas jan sem lote 77,4%→77,1%; varejo sem Pix ~17%→17–19%);
-  - teste com definição errada de usuário Pix (2.140 vs 2.172);
-  - README que atribuía ao candidato conferências feitas pela IA, reescrito.
+- **Pedido:** comandos do candidato, em ordem:
+  1. Perguntou se a IA tinha o contexto da conversa anterior, fechada sem registro. A IA verificou a memória, as transcrições, o `AI_LOG.md` e o git: não havia nada salvo, então o trabalho recomeçou do zero.
+  2. Pediu o escopo e as restrições do trabalho:
+     - **Prazo:** último commit até as 22h.
+     - **Repositório:** GitHub pessoal e público, usado como treino.
+     - **Restrição de nomes:** proibido citar o empregador ou clientes em qualquer arquivo.
+     - **EDA:** detalhada, separando perguntas técnicas, as perguntas do enunciado e perguntas de negócio.
+     - **Stack:** SQLite como fonte; camadas bronze, silver e gold, com "dbt simples ou SQL e Python direto"; testes; Docker para reprodutibilidade; chat com IA via Gemini ou modelo local, conforme o README.
+  3. Pediu para melhorar este registro, dando ênfase aos comandos e às validações dele. Avisou que começaria a revisar o trabalho em seguida.
 
-  Não verificado no ambiente: chamada real ao Gemini (sem chave) e build da imagem Docker (Docker indisponível no WSL).
-- **Arquivos criados ou alterados:** `README.md`, `AI_LOG.md`, `.gitignore`, `.dockerignore`, `Dockerfile`, `docker-compose.yml`, `requirements.txt`, `pytest.ini`, `setup.cfg`, `docs/EDA.md`, `docs/apresentacao.md`, `docs/recomendacao.md`, `catalog/gold.yml`, `pipeline/*.py`, `sql/silver/*.sql`, `sql/gold/*.sql`, `tests/*.py`, `agent/*.py`, `app/dashboard.py`.
+- **O que a IA fez ou sugeriu:**
+  1. **Integridade dos dados:** conferiu o SHA-256 e a contagem de linhas dos 9 CSVs contra o `MANIFESTO_v1.csv`. Tudo bateu.
+  2. **EDA:** fez 4 rodadas de perfilamento e cruzamento de chaves com DuckDB, em scripts temporários fora do repositório. Registrou tudo em `docs/EDA.md`, marcando cada item como [C] confirmado, [H] hipótese ou [?] pergunta. Principais achados:
+     - `orders.user_id` vem 100% vazio; o usuário só existe em `carts`.
+     - A categoria Cashback mistura Pix com compra de pontos, que não é resgate.
+     - A categoria Varejo inclui transferências para parceiros.
+     - Algumas compras dividem o pagamento entre 2 contas, gerando 2 linhas de resgate.
+     - Lote de 1.520 resgates de aéreas em 12/01/2026.
+     - Há expiração de saldo migrado com validade registrada em 2028.
+     - Nenhum ponto do programa novo expirou.
+     - O CRM não tem grupo de controle.
+     - O relatório do operador soma pontos de todos os status, o que explica o "R$ 0,016".
+     - A adoção do Pix é de ~18% com ou sem a campanha.
+  3. **Decisão de ferramenta:** recomendou SQL puro orquestrado por Python, em vez de dbt. Motivo: o adaptador SQLite do dbt é frágil. Implementou assim.
+  4. **Pipeline:** `pipeline/build.py` com 7 modelos silver e 8 gold, cada um com o grão declarado. Criou o catálogo semântico `catalog/gold.yml`, que o build carrega no SQLite para o agente consultar. Escreveu também `pipeline/eda.py`, que reproduz os números citados.
+  5. **Testes:** 54 testes cobrindo manifesto, chaves, integridade, conciliações ledger × pedidos, valores da apresentação e o validador de SQL do agente.
+  6. **Dashboard e agente:** Streamlit com 6 abas. O agente transforma texto em SQL, restrito à gold, em conexão somente leitura. O provedor é Gemini ou Ollama, escolhido por variável de ambiente.
+  7. **Entrega:** Dockerfile e compose; apresentação (`docs/apresentacao.md`), recomendação de uma página (`docs/recomendacao.md`) e seção de solução no README.
+  8. **Git:** antes de cada commit, rodou `git grep` em busca de nomes proibidos. Confirmou que o git local usa o e-mail pessoal. Fez 2 commits com push na branch `entrega`, usando a credencial do `gh`.
+
+- **O que o candidato conferiu, corrigiu ou rejeitou:**
+  - **Definido pelo candidato:** a restrição de nomes, o prazo, a stack (SQLite, camadas, Docker, Gemini ou modelo local) e a escolha entre dbt e SQL/Python, que ele deixou para a IA.
+  - **Erros da IA corrigidos na própria sessão:**
+    - Dois números do texto da EDA divergiam do pipeline final: aéreas em jan sem o lote (77,4% → 77,1%) e varejo sem Pix (~17% → 17–19%, ainda abaixo da meta).
+    - Um teste esperava 2.140 usuários de Pix numa tabela que conta aprovado ou estornado (2.172). As duas definições ficaram explícitas.
+    - O README atribuía ao candidato conferências que a IA tinha feito. Foi reescrito.
+    - Avisos do dashboard (parâmetro depreciado, coluna de tipo misto) foram corrigidos.
+  - **Não verificado pela IA:** chamada real ao Gemini (não havia chave) e build da imagem Docker (Docker indisponível no WSL).
+  - **Revisão do candidato — pendente**, iniciada após esta entrada. Preencher com o resultado:
+    - [ ] Números da apresentação e da recomendação conferidos com `python -m pipeline.eda`
+    - [ ] Pegadinhas da EDA conferidas (amostra)
+    - [ ] Regras de negócio da silver revisadas (modalidade, status APROVADO como resgate efetivado, lote de 12/01)
+    - [ ] Recomendação e afirmações avaliadas: concorda, discorda ou ajusta
+    - [ ] Agente testado com chave do Gemini, com exemplos reais registrados no README
+    - [ ] `docker compose up --build` executado
+    - [ ] Repositório revisado contra a restrição de nomes
+
+- **Arquivos criados ou alterados:**
+  - `README.md`, `AI_LOG.md`, `.gitignore`, `.dockerignore`, `Dockerfile`, `docker-compose.yml`, `requirements.txt`, `pytest.ini`, `setup.cfg`
+  - `docs/EDA.md`, `docs/apresentacao.md`, `docs/recomendacao.md`
+  - `catalog/gold.yml`, `pipeline/*.py`, `sql/silver/*.sql`, `sql/gold/*.sql`, `tests/*.py`, `agent/*.py`, `app/dashboard.py`
