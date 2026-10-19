@@ -110,7 +110,8 @@ with abas[5]:
         try:
             with st.spinner("Consultando..."):
                 out = ask(pergunta)
-            st.markdown(out["resposta"])
+            # escapa "$": o markdown do Streamlit trata "R$ ... R$" como LaTeX e some com os cifrões
+            st.markdown(out["resposta"].replace("$", "\\$"))
             if out["sql"]:
                 with st.expander("SQL e resultado"):
                     st.code(out["sql"], language="sql")

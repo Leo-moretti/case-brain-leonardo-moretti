@@ -35,7 +35,7 @@ Os CSVs ficam em `dados/`, como vieram. O build confere o SHA-256 de cada arquiv
 |---|---|---|
 | `LLM_PROVIDER` | `gemini` | `gemini` ou `ollama` |
 | `GEMINI_API_KEY` | (vazio) | chave do Gemini (obrigatória para `gemini`) |
-| `GEMINI_MODEL` | `gemini-2.5-flash` | modelo do Gemini |
+| `GEMINI_MODEL` | `gemini-3.8-flash` | modelo do Gemini |
 | `OLLAMA_HOST` | `http://localhost:11434` | servidor Ollama local (no Docker: `http://host.docker.internal:11434`) |
 | `OLLAMA_MODEL` | `llama3.1` | modelo local |
 
@@ -105,7 +105,23 @@ dados/*.csv ──► bronze_* ──► silver_* ──► gold_* ──► das
 
 O agente recusa perguntas sobre dados pessoais ou individuais, sobre dados que não existem (preço pago pelo banco, margem, datas após a extração) e assuntos fora do programa.
 
-Exemplos esperados:
+Exemplo real (`gemini-3.8-flash`, resposta resumida):
+
+> **Pergunta:** resumo financeiro do trimestre
+>
+> **Resposta:** Resumo dos resgates aprovados de jul a set/2026.
+> - **Consolidado:** 6.139 itens · 95.379.474 pontos · R$ 1.693.078,49 em produtos · R$ 166.347,63 de copagamento · R$ 1.526.730,86 cobertos por pontos.
+> - **Aéreas:** 2.299 itens · 55.631.000 pontos · R$ 834.270,23 · ~R$ 0,0150/ponto.
+> - **Pix:** 2.029 itens · 27.713.204 pontos · R$ 526.551,95 · R$ 0,0190/ponto.
+> - **Varejo (produtos):** 1.603 itens · 11.048.270 pontos · R$ 153.571,18 · R$ 0,0139/ponto.
+> - **Transferência para parceiros:** 208 itens · 987.000 pontos · R$ 12.337,50 · R$ 0,0125/ponto.
+> - **Por mês:** jul 30,5 M pontos / R$ 489.078,76 · ago 31,4 M / R$ 502.879,91 · set 33,5 M / R$ 534.772,19.
+>
+> *Ressalva:* a categoria varejo do sistema inclui transferências para parceiros; a definição contratual ainda não foi confirmada.
+
+Todos os números foram conferidos contra `gold_resgates_mensal` e batem ao centavo. Ponto de melhoria observado: o agente não avisou que o "resumo financeiro" cobre só o custo dos resgates, porque a receita (quanto o banco paga por ponto) não existe nos dados.
+
+Outros exemplos esperados (ainda não executados):
 - *"Qual o percentual de varejo em setembro?"* → 12,95%, abaixo da meta de 20%. Ressalva: a definição de varejo inclui transferências para parceiros.
 - *"O breakage está em 40%?"* → mostra as métricas candidatas e explica que o breakage do programa novo ainda não é mensurável.
 - *"Quanto o banco paga por ponto?"* → **recusa**: o dado não existe nas tabelas.
@@ -160,8 +176,8 @@ Veja as seções 5 e 6 de [docs/EDA.md](docs/EDA.md). As principais:
 ## Limitações e próximos passos
 
 - O deploy em serverless (ex.: Vercel) não suporta Streamlit. A entrega suportada é o contêiner (Docker, Render, Cloud Run, Fly). Para Vercel, o próximo passo seria expor o agente como função HTTP e o dashboard como página estática gerada a partir da camada gold.
-- O agente não foi exercitado contra o Gemini neste ambiente (sem chave disponível); o validador de SQL e o catálogo têm testes, e a chamada usa o SDK oficial `google-genai`.
-- A imagem Docker não foi construída neste ambiente (Docker indisponível no WSL usado); o build local equivalente (`pipeline.build` + `pytest`) passa.
+- O agente foi validado manualmente com `gemini-3.8-flash`: respostas concisas, sem dados inventados, com as proteções funcionando. O validador de SQL tem testes automatizados; a qualidade das respostas do LLM, não (depende do modelo).
+- A imagem Docker foi construída e executada localmente; o build roda o pipeline e os 54 testes.
 
 ## Tempo e uso de IA
 

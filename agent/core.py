@@ -1,7 +1,7 @@
 """Agente de perguntas sobre o Pontua+: texto -> SQL (só camada gold, somente leitura) -> resposta com ressalvas.
 
 Provedores (variável LLM_PROVIDER):
-  gemini (padrão): usa GEMINI_API_KEY e GEMINI_MODEL (padrão gemini-2.5-flash)
+  gemini (padrão): usa GEMINI_API_KEY e GEMINI_MODEL (padrão gemini-3.8-flash)
   ollama: usa OLLAMA_HOST (padrão http://localhost:11434) e OLLAMA_MODEL (padrão llama3.1)
 """
 import json
@@ -70,7 +70,7 @@ def _gemini(system: str, user: str, json_mode: bool) -> str:
         temperature=0,
         response_mime_type="application/json" if json_mode else "text/plain",
     )
-    resp = client.models.generate_content(model=os.getenv("GEMINI_MODEL", "gemini-2.5-flash"), contents=user, config=cfg)
+    resp = client.models.generate_content(model=os.getenv("GEMINI_MODEL", "gemini-3.8-flash"), contents=user, config=cfg)
     return resp.text
 
 

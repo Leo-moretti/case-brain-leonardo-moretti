@@ -48,14 +48,19 @@ Uma entrada por sessão, da mais antiga para a mais recente. Formato e regras em
     - as regras de permissão do ambiente, que bloquearam leitura e escrita de arquivos `.env*` e chamadas de rede não autorizadas. Por isso as variáveis de ambiente foram documentadas no README, em vez de num `.env.example`.
 
     Nenhuma skill foi acionada explicitamente nesta sessão.
-  - **Não verificado pela IA:** chamada real ao Gemini (não havia chave) e build da imagem Docker (Docker indisponível no WSL).
+  - **Verificações após a entrega inicial:**
+    - **Modelo:** a pedido do candidato, o padrão do agente mudou de `gemini-2.5-flash` para `gemini-3.8-flash` (`agent/core.py`, `docker-compose.yml`, `README.md`).
+    - **Docker:** com a integração WSL ativada pelo candidato, a IA reconstruiu e subiu o container. O build da imagem rodou o pipeline e os 54 testes, que passaram. Ao recriar o container a partir do shell da IA, a chave do Gemini ficou de fora; o candidato subiu de novo com a chave.
+    - **Agente (validação do candidato):** testou o agente com `gemini-3.8-flash` e avaliou o resultado como aceitável. Segundo ele, não inventou dados, as proteções (harness) funcionaram e a resposta veio concisa, em bullet points, direto ao ponto.
   - **Revisão do candidato — pendente**, iniciada após esta entrada. Preencher com o resultado:
     - [ ] Números da apresentação e da recomendação conferidos com `python -m pipeline.eda`
     - [ ] Pegadinhas da EDA conferidas (amostra)
     - [ ] Regras de negócio da silver revisadas (modalidade, status APROVADO como resgate efetivado, lote de 12/01)
     - [ ] Recomendação e afirmações avaliadas: concorda, discorda ou ajusta
-    - [ ] Agente testado com chave do Gemini, com exemplos reais registrados no README
-    - [ ] `docker compose up --build` executado
+    - [x] Agente testado com chave do Gemini (`gemini-3.8-flash`): resultado aceitável, sem dados inventados, proteções funcionando, resposta concisa
+    - [~] Exemplos reais do agente no README. Registrado 1 ("resumo financeiro do trimestre"): a IA conferiu os números contra a gold e eles batem ao centavo. Falta um exemplo real de recusa ou de resposta com ressalva forte.
+    - A resposta do agente revelou um bug no dashboard: o markdown do Streamlit tratava "R$ … R$" como LaTeX e apagava os cifrões. A IA corrigiu, escapando o `$`.
+    - [x] `docker compose up --build` executado
     - [ ] Repositório revisado contra a restrição de nomes
 
 - **Arquivos criados ou alterados:**
