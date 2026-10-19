@@ -8,6 +8,7 @@ regras_gerais:
   - "Varejo (categoria do sistema) inclui transferências para programas parceiros; varejo_produto exclui. A definição contratual ainda não foi confirmada."
   - "Em 12/01/2026 houve um lote atípico de 1.520 resgates de aéreas (flag_lote_20260112). Use as colunas *_sem_lote para comparar tendência."
   - "Breakage do programa novo não é mensurável: nenhum crédito venceu até a extração (01/10/2026)."
+  - "Custo do programa / quanto o programa paga = custo_pontos_reais (valor do produto coberto por pontos, sem o copagamento do cliente), em gold_resgates_mensal ou gold_fct_resgate. O que NÃO existe é quanto o banco paga ao programa por ponto (receita) nem margem."
   - "Datas em horário de Brasília (-03:00). mes no formato YYYY-MM."
   - "Dados de 01/10/2025 a 30/09/2026. Extração em 01/10/2026."
 

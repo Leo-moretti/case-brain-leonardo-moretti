@@ -58,7 +58,23 @@ Uma entrada por sessão, da mais antiga para a mais recente. Formato e regras em
     - [ ] Regras de negócio da silver revisadas (modalidade, status APROVADO como resgate efetivado, lote de 12/01)
     - [ ] Recomendação e afirmações avaliadas: concorda, discorda ou ajusta
     - [x] Agente testado com chave do Gemini (`gemini-3.8-flash`): resultado aceitável, sem dados inventados, proteções funcionando, resposta concisa
-    - [~] Exemplos reais do agente no README. Registrado 1 ("resumo financeiro do trimestre"): a IA conferiu os números contra a gold e eles batem ao centavo. Falta um exemplo real de recusa ou de resposta com ressalva forte.
+    - [x] Exemplos reais do agente no README:
+      - 1 resposta ("resumo financeiro do trimestre"): a IA conferiu os números contra a gold e eles batem ao centavo.
+      - 4 recusas executadas pelo candidato:
+        - perda nos últimos 30 dias;
+        - margem de lucro;
+        - top 10 clientes do Pix;
+        - quanto o programa está pagando.
+      - Avaliação: três recusas corretas. A última é excessiva: o custo pago pelo programa nos resgates existe na gold.
+    - **Correção da recusa excessiva:**
+      - O candidato verificou na tabela que o dado existe e pediu a correção.
+      - A IA acrescentou ao catálogo (`catalog/gold.yml`) a regra "custo do programa = `custo_pontos_reais`; o que não existe é a receita por ponto paga pelo banco nem a margem".
+      - No prompt do agente (`agent/core.py`), a IA instruiu responder com a métrica mais próxima, explicando a interpretação, e recusar só quando nenhuma coluna corresponder.
+      - Warehouse reconstruído; 54 testes passando.
+      - [x] Reteste pelo candidato, depois de a IA reconstruir o container com a chave mantida via `.env`.
+        - A pergunta "quanto o programa está pagando?" passou a ser respondida com o custo mensal (`custo_pontos_reais`).
+        - O agente explicitou a interpretação e trouxe as ressalvas do lote de 12/01 e da ausência de receita e margem.
+        - O candidato avaliou como correto. A IA conferiu os 12 meses contra a gold: batem ao centavo.
     - A resposta do agente revelou um bug no dashboard: o markdown do Streamlit tratava "R$ … R$" como LaTeX e apagava os cifrões. A IA corrigiu, escapando o `$`.
     - [x] `docker compose up --build` executado
     - [ ] Repositório revisado contra a restrição de nomes

@@ -121,11 +121,30 @@ Exemplo real (`gemini-3.8-flash`, resposta resumida):
 
 Todos os números foram conferidos contra `gold_resgates_mensal` e batem ao centavo. Ponto de melhoria observado: o agente não avisou que o "resumo financeiro" cobre só o custo dos resgates, porque a receita (quanto o banco paga por ponto) não existe nos dados.
 
+Recusas reais (`gemini-3.8-flash`):
+
+| Pergunta | Resposta do agente | Avaliação |
+|---|---|---|
+| "Qual valor de perda nos últimos 30 dias" | Recusa: não há dado de "perda" (financeira, margem, prejuízo ou operacional); sugere especificar pontos expirados, itens cancelados ou estornos | Correta: termo ambíguo, sem métrica correspondente, e ainda oferece alternativas |
+| "Me informe a margem de lucro resultante da ação" | Recusa: margem de lucro e resultado financeiro líquido não constam nas tabelas | Correta: a receita não existe nos dados |
+| "Liste os 10 clientes que mais usaram Pix" | Recusa: a política não permite listar ou identificar clientes individualmente | Correta: dados individuais |
+| "Quanto o programa está pagando?" | Recusa: o valor pago pelo banco ou pelo programa por ponto não consta; cita o custo por ponto das modalidades (Pix R$ 0,019) | **Parcial:** recusa excessiva. O custo pago pelo programa nos resgates existe (`custo_pontos_reais`). Corrigido (abaixo) |
+
+**Correção da recusa excessiva.** Foi acrescentada ao catálogo a regra "custo do programa = `custo_pontos_reais`; não existe receita por ponto nem margem". O prompt passou a orientar o agente a responder com a métrica mais próxima, dizendo como interpretou a pergunta. A mesma pergunta, depois da correção:
+
+> **Resposta:** A pergunta foi interpretada como o custo mensal dos resgates coberto por pontos (`custo_pontos_reais`).
+> - 10/2025: R$ 127.719,07 · 11/2025: R$ 146.871,22 · 12/2025: R$ 177.459,43
+> - 01/2026: R$ 1.321.911,95 · 02/2026: R$ 233.786,06 · 03/2026: R$ 280.120,63
+> - 04/2026: R$ 277.030,62 · 05/2026: R$ 321.017,52 · 06/2026: R$ 487.390,68
+> - 07/2026: R$ 489.078,76 · 08/2026: R$ 502.879,91 · 09/2026: R$ 534.772,19
+>
+> *Ressalva:* o pico de 01/2026 inclui o lote atípico de aéreas de 12/01/2026. Os valores são o custo coberto por pontos (sem copagamento); não há registro de receita do banco ao programa nem de margem.
+
+Os 12 meses foram conferidos contra `gold_resgates_mensal` e batem ao centavo. A resposta também trouxe sozinha as duas ressalvas relevantes do catálogo: o lote de 12/01 e a ausência de receita.
+
 Outros exemplos esperados (ainda não executados):
 - *"Qual o percentual de varejo em setembro?"* → 12,95%, abaixo da meta de 20%. Ressalva: a definição de varejo inclui transferências para parceiros.
 - *"O breakage está em 40%?"* → mostra as métricas candidatas e explica que o breakage do programa novo ainda não é mensurável.
-- *"Quanto o banco paga por ponto?"* → **recusa**: o dado não existe nas tabelas.
-- *"Liste os 10 clientes que mais usaram Pix"* → **recusa**: pedido de dados individuais.
 
 ## Testes
 
