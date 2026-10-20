@@ -86,3 +86,21 @@ def test_campanha_groups_cover_all_users(con):
 
 def test_no_new_program_points_expired(con):
     assert one(con, "SELECT valor FROM gold_breakage WHERE metrica = 'expirados_programa_novo_pontos'") == 0
+
+
+def test_benchmark_against_operator_report(con):
+    from pipeline.benchmark import benchmark
+
+    r = {b["metrica"]: b for b in benchmark(con)}
+    # percentuais batem com o relatório em todos os meses exceto jun/26, quando o operador mudou de critério
+    assert r["varejo_pct"]["acuracia_pct"] == 100.0
+    assert [d[0] for d in r["aereas_pct"]["divergentes"]] == ["2026-06"]
+    assert [d[0] for d in r["pix_pct"]["divergentes"]] == ["2026-06"]
+    assert r["pix_pontos (todos os status)"]["acuracia_pct"] == 100.0
+    assert max(r["pix_reais (aprovados) erro relativo %"]["erros_pct"]) < 1
+
+
+def test_inferred_rules_flagged_for_business_review(con):
+    assert one(con, "SELECT COUNT(*) FROM meta_regras_inferidas") >= 10
+    assert one(con, "SELECT COUNT(*) FROM meta_regras_inferidas WHERE status NOT IN "
+                    "('pendente_validacao_negocio', 'validada', 'rejeitada')") == 0

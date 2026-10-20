@@ -48,6 +48,9 @@ Uma entrada por sessão, da mais antiga para a mais recente. Formato e regras em
     - as regras de permissão do ambiente, que bloquearam leitura e escrita de arquivos `.env*` e chamadas de rede não autorizadas. Por isso as variáveis de ambiente foram documentadas no README, em vez de num `.env.example`.
 
     Nenhuma skill foi acionada explicitamente nesta sessão.
+  - **Decisão do candidato sobre a IA local:**
+    - O Ollama fica registrado como implementado e não testado, por não ter sido priorizado.
+    - O planejamento de tempo focou nos pontos mais críticos, já que o Gemini, provedor indicado no desafio, entregou o necessário de forma gratuita.
   - **Verificações após a entrega inicial:**
     - **Modelo:** a pedido do candidato, o padrão do agente mudou de `gemini-2.5-flash` para `gemini-3.8-flash` (`agent/core.py`, `docker-compose.yml`, `README.md`).
     - **Docker:** com a integração WSL ativada pelo candidato, a IA reconstruiu e subiu o container. O build da imagem rodou o pipeline e os 54 testes, que passaram. Ao recriar o container a partir do shell da IA, a chave do Gemini ficou de fora; o candidato subiu de novo com a chave.
@@ -101,10 +104,10 @@ Uma entrada por sessão, da mais antiga para a mais recente. Formato e regras em
       - `docs/DICIONARIO_DADOS.md`, com as 9 fontes, tipos, nulos e domínios vindos da EDA.
     - **Ressalva da IA:** os níveis de classificação são uma proposta e devem ser alinhados à política da instituição.
   - **Revisão do candidato — pendente**, iniciada após esta entrada. Preencher com o resultado:
-    - [ ] Números da apresentação e da recomendação conferidos com `python -m pipeline.eda`
-    - [ ] Pegadinhas da EDA conferidas (amostra)
-    - [ ] Regras de negócio da silver revisadas (modalidade, status APROVADO como resgate efetivado, lote de 12/01)
-    - [ ] Recomendação e afirmações avaliadas: concorda, discorda ou ajusta
+    - [x] Números da apresentação e da recomendação conferidos com `python -m pipeline.eda`
+    - [x] Pegadinhas da EDA conferidas (amostra)
+    - [x] Regras de negócio da silver revisadas pelo candidato. Segundo ele, as regras e os tratamentos foram inferidos com base no README do case e na experiência de desenvolvimento, sem confirmação do negócio. A pedido dele, as 10 regras inferidas foram registradas como `pendente_validacao_negocio` (`catalog/gold.yml` → `meta_regras_inferidas`, citadas pelo agente), e foi criado um benchmark de acurácia contra o relatório do operador (`python -m pipeline.benchmark`). Resultado: varejo 9/9 meses; aéreas e Pix batem em todos os meses exceto jun/26, quando o operador mudou de critério; pontos e transações Pix 100% (contando todos os status, como o operador); R$ Pix com erro de até 0,72% contra os aprovados.
+    - [x] Recomendação e afirmações avaliadas pelo candidato
     - [x] Agente testado com chave do Gemini (`gemini-3.8-flash`): resultado aceitável, sem dados inventados, proteções funcionando, resposta concisa
     - [x] Exemplos reais do agente no README:
       - 1 resposta ("resumo financeiro do trimestre"): a IA conferiu os números contra a gold e eles batem ao centavo.
@@ -125,7 +128,7 @@ Uma entrada por sessão, da mais antiga para a mais recente. Formato e regras em
         - O candidato avaliou como correto. A IA conferiu os 12 meses contra a gold: batem ao centavo.
     - A resposta do agente revelou um bug no dashboard: o markdown do Streamlit tratava "R$ … R$" como LaTeX e apagava os cifrões. A IA corrigiu, escapando o `$`.
     - [x] `docker compose up --build` executado
-    - [ ] Repositório revisado contra a restrição de nomes
+    - [x] Repositório revisado contra a restrição de nomes. A IA verificou: 0 ocorrências nos arquivos versionados, nos não versionados e no conteúdo de todo o histórico git; autores dos commits são só o e-mail pessoal do candidato e o autor do commit inicial do case
 
 - **Arquivos criados ou alterados:**
   - `quality/checks.yml`, `pipeline/quality.py`, `pipeline/alerts.py`, `tests/test_quality.py` (guardrails)

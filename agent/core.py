@@ -31,7 +31,10 @@ def schema_context() -> str:
     """Monta o contexto a partir das tabelas de metadados do warehouse (meta_*)."""
     con = connect_ro()
     regras = [r[0] for r in con.execute("SELECT regra FROM meta_regras")]
-    partes = ["REGRAS DE NEGÓCIO E RESSALVAS:"] + [f"- {r}" for r in regras] + ["", "TABELAS:"]
+    inferidas = con.execute("SELECT id, regra, status FROM meta_regras_inferidas").fetchall()
+    partes = (["REGRAS DE NEGÓCIO E RESSALVAS:"] + [f"- {r}" for r in regras]
+              + ["", "REGRAS INFERIDAS (cite o id na ressalva quando a resposta depender de uma com status pendente):"]
+              + [f"- {i} [{s}]: {r}" for i, r, s in inferidas] + ["", "TABELAS:"])
     for tabela, grao, desc in con.execute("SELECT tabela, grao, descricao FROM meta_tabelas"):
         partes.append(f"\n{tabela} (grão: {grao}) — {desc}")
         for col, cdesc in con.execute("SELECT coluna, descricao FROM meta_colunas WHERE tabela = ?", (tabela,)):

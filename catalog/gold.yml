@@ -12,6 +12,60 @@ regras_gerais:
   - "Datas em horário de Brasília (-03:00). mes no formato YYYY-MM."
   - "Dados de 01/10/2025 a 30/09/2026. Extração em 01/10/2026."
 
+# Regras de tratamento INFERIDAS (README do case + EDA + experiência de desenvolvimento), sem confirmação do negócio.
+# status: pendente_validacao_negocio | validada | rejeitada. Carregadas em meta_regras_inferidas e citadas pelo agente.
+regras_inferidas:
+  - id: R01
+    regra: "Resgate efetivado = item com status APROVADO (ESTORNADO, CANCELADO, INVALIDO e AGUARDANDO ficam fora das metas e custos)"
+    origem: "EDA: só APROVADO e ESTORNADO debitam o ledger; experiência"
+    impacto: "Todas as métricas de resgate, metas e custo"
+    status: pendente_validacao_negocio
+  - id: R02
+    regra: "Metas usam o total de pontos resgatados com o Pix no denominador"
+    origem: "README do case ('total de pontos resgatados')"
+    impacto: "Varejo 12-13% (com Pix) vs 17-19% (sem Pix); ambos abaixo de 20%"
+    status: pendente_validacao_negocio
+  - id: R03
+    regra: "Varejo = category_macro Varejo, incluindo transferências para parceiros (alternativa varejo_produto disponível)"
+    origem: "Categoria do sistema; README cita transferências como modalidade separada"
+    impacto: "Varejo sem transferências cai ~1 p.p. após o Pix e ~4-5 p.p. antes"
+    status: pendente_validacao_negocio
+  - id: R04
+    regra: "COMPRA_PONTOS não é resgate e sai das métricas, apesar de estar em Cashback"
+    origem: "EDA: paid_points vazio, pago em R$"
+    impacto: "Exclui 520 itens"
+    status: pendente_validacao_negocio
+  - id: R05
+    regra: "Usuário do pedido vem de carts.user_id (orders.user_id é 100% vazio)"
+    origem: "EDA: carts 1:1 com orders"
+    impacto: "Toda análise por usuário"
+    status: pendente_validacao_negocio
+  - id: R06
+    regra: "Usuário de evento CRM sem user_id é recuperado por device_id"
+    origem: "EDA: device -> user 1:1"
+    impacto: "20.252 eventos; análise da campanha Pix"
+    status: pendente_validacao_negocio
+  - id: R07
+    regra: "Lote de aéreas de 12/01/2026 é atípico e sinalizado (flag_lote_20260112), sem ser excluído"
+    origem: "EDA: 1.520 itens em 24 h, 99,7% migrados"
+    impacto: "Aéreas jan/26 97% (com) vs 77% (sem)"
+    status: pendente_validacao_negocio
+  - id: R08
+    regra: "product_value representa o custo para o programa; custo coberto por pontos = product_value - paid_currency"
+    origem: "Hipótese de experiência"
+    impacto: "Custo por ponto por modalidade e recomendação de taxa do Pix"
+    status: pendente_validacao_negocio
+  - id: R09
+    regra: "event_ts do CRM está em horário local (sem fuso na origem)"
+    origem: "Hipótese; alinhamento com orders inconclusivo"
+    impacto: "Ordem Pix antes/depois do e-mail (20 casos)"
+    status: pendente_validacao_negocio
+  - id: R10
+    regra: "Adoção do Pix na campanha = Pix APROVADO ou ESTORNADO; usou_pix (dim_usuario) = só APROVADO"
+    origem: "Decisão de modelagem"
+    impacto: "2.172 vs 2.140 usuários"
+    status: pendente_validacao_negocio
+
 tabelas:
   gold_metas_mensal:
     grao: "1 linha por mês"

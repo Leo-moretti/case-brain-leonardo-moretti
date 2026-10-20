@@ -22,7 +22,7 @@ GEMINI_API_KEY=<sua_chave> docker compose up --build
 python -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
 python -m pipeline.build          # CSVs -> warehouse/pontua.db (bronze, silver, gold)
-python -m pytest                  # 84 testes (~2 min)
+python -m pytest                  # 86 testes (~2 min)
 python -m pipeline.eda            # imprime todos os números citados na apresentação
 streamlit run app/dashboard.py    # dashboard + agente
 ```
@@ -151,7 +151,7 @@ Outros exemplos esperados (ainda não executados):
 
 ## Testes
 
-São 84 testes (`python -m pytest`, ~2 min), que reconstroem o warehouse do zero a partir dos CSVs:
+São 86 testes (`python -m pytest`, ~2 min), que reconstroem o warehouse do zero a partir dos CSVs:
 - **Carga:** contagem de linhas por arquivo = manifesto. O hash é verificado no build.
 - **Chaves:** unicidade e não nulidade da chave de cada modelo silver/gold; grão de `gold_resgates_mensal`.
 - **Integridade referencial:** item → pedido, ledger → cartões, um cartão mais recente por usuário, códigos de operação conhecidos, nenhum usuário sem resolução.
@@ -231,6 +231,20 @@ O detalhe, com a evidência de cada item, está em [docs/EDA.md](docs/EDA.md) (m
 - Nenhum ponto do programa novo expirou; os códigos 3 e 13 nunca aparecem.
 - O CRM não tem grupo de controle; a adoção do Pix é igual entre expostos e não expostos.
 
+**Regras inferidas e acurácia**
+- **Regras pendentes de validação:** as regras de tratamento da silver foram inferidas a partir do README do case, da EDA e da experiência de desenvolvimento. As 10 regras (R01–R10) estão registradas em [catalog/gold.yml](catalog/gold.yml) com o status `pendente_validacao_negocio`, origem e impacto. Elas vão para a tabela `meta_regras_inferidas`, e o agente cita o id da regra quando a resposta depende dela.
+- **Benchmark de acurácia** (`python -m pipeline.benchmark`), contra o relatório do operador, a única referência externa disponível:
+
+| Métrica | Acurácia | Divergência |
+|---|---|---|
+| varejo_pct (±0,5 p.p.) | 9/9 meses | — |
+| aereas_pct (±0,5 p.p.) | 8/9 | jun/26 (56,3 vs 55) |
+| pix_pct (±0,5 p.p.) | 4/5 | jun/26 (30,4 vs 32) |
+| pix_transacoes e pix_pontos (todos os status) | 5/5 exatos | — |
+| pix_reais (aprovados) | 5/5 com erro < 1% | máximo de 0,72% |
+
+A única divergência é junho, mês em que o relatório do operador usa um critério diferente (todos os status). As regras do pipeline reproduzem o relatório nos demais meses; o benchmark mede a consistência com o operador, não a verdade de negócio.
+
 **Hipóteses**
 - `event_ts` do CRM está em horário local.
 - `product_value` representa o custo do programa (não o preço de venda).
@@ -253,6 +267,7 @@ Veja as seções 5 e 6 de [docs/EDA.md](docs/EDA.md). As principais:
 
 - O deploy em serverless (ex.: Vercel) não suporta Streamlit. A entrega suportada é o contêiner (Docker, Render, Cloud Run, Fly). Para Vercel, o próximo passo seria expor o agente como função HTTP e o dashboard como página estática gerada a partir da camada gold.
 - O agente foi validado manualmente com `gemini-3.8-flash`: respostas concisas, sem dados inventados, com as proteções funcionando. O validador de SQL tem testes automatizados; a qualidade das respostas do LLM, não (depende do modelo).
+- **IA local (Ollama): implementada e não testada.** Ficou fora por priorização. O tempo foi para os pontos mais críticos, porque o Gemini, que é o provedor indicado no desafio, entregou o necessário de forma gratuita. O caminho `LLM_PROVIDER=ollama` existe no código, mas não foi exercitado.
 - A imagem Docker foi construída e executada localmente; o build roda o pipeline, os guardrails e os testes.
 
 ## Tempo e uso de IA

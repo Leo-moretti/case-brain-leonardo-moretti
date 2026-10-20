@@ -92,6 +92,14 @@ def load_catalog(con: sqlite3.Connection) -> None:
         CREATE TABLE meta_colunas (tabela TEXT, coluna TEXT, descricao TEXT, PRIMARY KEY (tabela, coluna));
     """)
     con.executemany("INSERT INTO meta_regras VALUES (?)", [(r,) for r in cat["regras_gerais"]])
+    con.executescript("""
+        DROP TABLE IF EXISTS meta_regras_inferidas;
+        CREATE TABLE meta_regras_inferidas (id TEXT PRIMARY KEY, regra TEXT, origem TEXT, impacto TEXT, status TEXT);
+    """)
+    con.executemany(
+        "INSERT INTO meta_regras_inferidas VALUES (?, ?, ?, ?, ?)",
+        [(r["id"], r["regra"], r["origem"], r["impacto"], r["status"]) for r in cat["regras_inferidas"]],
+    )
     for tabela, spec in cat["tabelas"].items():
         con.execute("INSERT INTO meta_tabelas VALUES (?, ?, ?)", (tabela, spec["grao"], spec["descricao"]))
         con.executemany(
