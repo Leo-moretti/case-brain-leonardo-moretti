@@ -9,3 +9,4 @@ linha_do_tempo.sh
 warehouse/
 __pycache__/
 .pytest_cache/
+api/pontua_gold.db

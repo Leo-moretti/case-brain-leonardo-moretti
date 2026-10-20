@@ -48,6 +48,21 @@ Uma entrada por sessão, da mais antiga para a mais recente. Formato e regras em
     - as regras de permissão do ambiente, que bloquearam leitura e escrita de arquivos `.env*` e chamadas de rede não autorizadas. Por isso as variáveis de ambiente foram documentadas no README, em vez de num `.env.example`.
 
     Nenhuma skill foi acionada explicitamente nesta sessão.
+  - **Últimos exemplos do agente (testados pelo candidato após o restart):**
+    - Foram 2 perguntas, "varejo em setembro" e "breakage está em 40%?". A IA conferiu os números contra a gold, e todos batem.
+    - O agente citou os ids das regras inferidas pendentes (R02, R03) e incluiu o rodapé de valores gerenciais com a versão dos dados.
+    - A IA apontou uma imprecisão na resposta de breakage: "é atualmente 0" deveria ser "não mensurável". A ressalva final corrige, e a imprecisão ficou registrada no README.
+  - **Portabilidade para Vercel (pedido do candidato, a ~15 min do prazo):**
+    - A IA avisou que daria tempo de fazer um pacote documentado, mas não um deploy testado, e que o Streamlit não roda em serverless.
+    - Criou a função `api/index.py`, a página estática `public/index.html` e o `vercel.json`.
+    - Criou `pipeline/export_gold.py`, porque o warehouse completo tem 195 MB (perto do limite da Vercel). O SQLite só com gold, dq e meta tem 4,6 MB, e bronze e silver ficam fora.
+    - Testado localmente: o GET de metas funciona e a tabela de grão individual é bloqueada.
+    - Não testado: o deploy real e o POST do agente na Vercel.
+  - **Tempo registrado pelo candidato antes do PR:** ~2h (19h49 até o último commit, antes das 22h).
+  - **Prompt de apresentação (pedido do candidato, antes do PR):**
+    - A IA gerou `docs/prompt_apresentacao_ppt.md`, um prompt para criar o PPT por IA, com roteiro de 11 slides e notas do apresentador.
+    - O prompt proíbe inventar números e citar nomes reais e exige o rodapé de valores gerenciais.
+    - A IA conferiu os números novos do prompt (pontos por mês, aéreas de jun e set) contra a gold.
   - **Decisão do candidato sobre a IA local:**
     - O Ollama fica registrado como implementado e não testado, por não ter sido priorizado.
     - O planejamento de tempo focou nos pontos mais críticos, já que o Gemini, provedor indicado no desafio, entregou o necessário de forma gratuita.
@@ -131,6 +146,7 @@ Uma entrada por sessão, da mais antiga para a mais recente. Formato e regras em
     - [x] Repositório revisado contra a restrição de nomes. A IA verificou: 0 ocorrências nos arquivos versionados, nos não versionados e no conteúdo de todo o histórico git; autores dos commits são só o e-mail pessoal do candidato e o autor do commit inicial do case
 
 - **Arquivos criados ou alterados:**
+  - `api/index.py`, `public/index.html`, `vercel.json`, `pipeline/export_gold.py` (portabilidade), `pipeline/benchmark.py`, `pipeline/pan_check.py`, `docs/prompt_apresentacao_ppt.md`, `docs/DICIONARIO_DADOS.md`, `docs/CLASSIFICACAO_DADOS.md`, `docs/SEGURANCA_COMPLIANCE.md`
   - `quality/checks.yml`, `pipeline/quality.py`, `pipeline/alerts.py`, `tests/test_quality.py` (guardrails)
   - `README.md`, `AI_LOG.md`, `.gitignore`, `.dockerignore`, `Dockerfile`, `docker-compose.yml`, `requirements.txt`, `pytest.ini`, `setup.cfg`
   - `docs/EDA.md`, `docs/apresentacao.md`, `docs/recomendacao.md`

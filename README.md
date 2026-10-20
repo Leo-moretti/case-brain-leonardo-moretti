@@ -46,6 +46,7 @@ Sem chave, o dashboard funciona normalmente e só a aba "Pergunte aos dados" mos
 | Peça | Onde |
 |---|---|
 | Apresentação para a diretoria | [docs/apresentacao.md](docs/apresentacao.md) (Markdown compatível com Marp) |
+| Prompt para gerar a apresentação em PPT via IA | [docs/prompt_apresentacao_ppt.md](docs/prompt_apresentacao_ppt.md) |
 | Recomendação de uma página | [docs/recomendacao.md](docs/recomendacao.md) |
 | EDA (entendimento dos dados, pegadinhas, perguntas) | [docs/EDA.md](docs/EDA.md) |
 | Código | [pipeline/](pipeline/), [sql/](sql/) |
@@ -145,9 +146,25 @@ Recusas reais (`gemini-3.8-flash`):
 
 Os 12 meses foram conferidos contra `gold_resgates_mensal` e batem ao centavo. A resposta também trouxe sozinha as duas ressalvas relevantes do catálogo: o lote de 12/01 e a ausência de receita.
 
-Outros exemplos esperados (ainda não executados):
-- *"Qual o percentual de varejo em setembro?"* → 12,95%, abaixo da meta de 20%. Ressalva: a definição de varejo inclui transferências para parceiros.
-- *"O breakage está em 40%?"* → mostra as métricas candidatas e explica que o breakage do programa novo ainda não é mensurável.
+Respostas com ressalva (`gemini-3.8-flash`, depois das guardas, da trilha de auditoria e das regras inferidas):
+
+> **Pergunta:** Qual o percentual de varejo em setembro?
+>
+> **Resposta:** Em setembro de 2026 o varejo foi de 12,95% pela categoria do sistema (produtos e transferências para parceiros). Só com produtos de varejo, 12,01%. Excluindo o Pix do denominador, 17,99%.
+> *Ressalva:* a meta contratual é de no mínimo 20%; o cálculo padrão inclui transferências em varejo e mantém o Pix na base, pontos que dependem de validação contratual (R02 e R03).
+> *Valores gerenciais (não contábeis) · versão dos dados: 20261020T003939287558*
+
+> **Pergunta:** O breakage está em 40%?
+>
+> **Resposta:** Não. O primeiro vencimento de créditos do programa novo ocorre em 25/09/2027. Métricas observadas:
+> - expiração sobre o saldo migrado: 19,78% (única expiração até agora);
+> - expiração sobre as saídas (expirados + resgatados): 16,54%;
+> - provável origem dos "40%": expirados / resgatados em fev–mai/26 = 37,11%, cálculo que não representa breakage.
+>
+> *Ressalva:* o breakage do programa novo não é mensurável; nenhum crédito venceu até a extração.
+> *Valores gerenciais (não contábeis) · versão dos dados: 20261020T003939287558*
+
+Todos os números foram conferidos contra `gold_metas_mensal` e `gold_breakage` e batem. A primeira resposta citou espontaneamente os ids das regras inferidas pendentes (R02, R03). A segunda tem uma imprecisão de redação: disse que "o breakage do programa novo é atualmente 0". O correto é "não mensurável" (0 pontos expirados porque nada venceu, não uma taxa de 0%). A ressalva final corrige, mas o texto principal deveria ter evitado a afirmação.
 
 ## Testes
 
@@ -265,14 +282,20 @@ Veja as seções 5 e 6 de [docs/EDA.md](docs/EDA.md). As principais:
 
 ## Limitações e próximos passos
 
-- O deploy em serverless (ex.: Vercel) não suporta Streamlit. A entrega suportada é o contêiner (Docker, Render, Cloud Run, Fly). Para Vercel, o próximo passo seria expor o agente como função HTTP e o dashboard como página estática gerada a partir da camada gold.
+- O deploy em serverless (ex.: Vercel) não suporta Streamlit. A entrega completa é o contêiner (Docker, Render, Cloud Run, Fly); para a Vercel há a versão simplificada descrita abaixo.
 - O agente foi validado manualmente com `gemini-3.8-flash`: respostas concisas, sem dados inventados, com as proteções funcionando. O validador de SQL tem testes automatizados; a qualidade das respostas do LLM, não (depende do modelo).
+- **Portabilidade para Vercel: implementada, testada localmente, sem deploy real.**
+  - O Streamlit não roda em serverless. Por isso existe uma versão simplificada: [api/index.py](api/index.py), uma função Python que serve as tabelas gold agregadas (GET) e o agente (POST), com as mesmas guardas e trilha; e [public/index.html](public/index.html), uma página estática com as metas e o chat.
+  - [vercel.json](vercel.json) roda o pipeline no build e exporta um SQLite **só com gold, dq e meta** (`python -m pipeline.export_gold`, 4,6 MB contra 195 MB do warehouse completo). Bronze e silver não saem do ambiente.
+  - Para subir: importar o repositório na Vercel e definir `GEMINI_API_KEY`.
+  - Testado localmente: o GET devolve as metas e bloqueia `gold_fct_resgate` (grão individual).
+  - Não testado: o deploy real na Vercel e o POST do agente na Vercel. A trilha de auditoria vai para `/tmp`, que é efêmero; em produção deve ir para um log externo.
 - **IA local (Ollama): implementada e não testada.** Ficou fora por priorização. O tempo foi para os pontos mais críticos, porque o Gemini, que é o provedor indicado no desafio, entregou o necessário de forma gratuita. O caminho `LLM_PROVIDER=ollama` existe no código, mas não foi exercitado.
 - A imagem Docker foi construída e executada localmente; o build roda o pipeline, os guardrails e os testes.
 
 ## Tempo e uso de IA
 
-- Tempo: sessão iniciada às 19h49, com prazo às 22h.
+- Tempo: ~2h, em uma sessão (19h49 até o último commit, antes das 22h). Inclui EDA, pipeline, testes, dashboard, agente, Docker, guardrails, revisão de segurança, documentação de governança e portabilidade para Vercel.
 - IA: assistente de código em todas as etapas, com o registro detalhado em [AI_LOG.md](AI_LOG.md).
   - A IA rodou a exploração (SQL via DuckDB em scripts temporários), propôs a modelagem e escreveu o código.
   - Ao conferir os números da EDA contra o pipeline final, os testes e a revisão da própria sessão corrigiram "aéreas sem o lote" de 77,4% para 77,1% e "varejo sem Pix" de ~17% para 17–19%. Também explicitaram as duas definições de usuário Pix (aprovado = 2.140; aprovado ou estornado = 2.172).

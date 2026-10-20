@@ -1,0 +1,8 @@
+{
+  "buildCommand": "pip install -r requirements.txt && python -m pipeline.build && python -m pipeline.export_gold",
+  "outputDirectory": "public",
+  "functions": {
+    "api/index.py": { "includeFiles": "{api/pontua_gold.db,agent/**,catalog/**}", "maxDuration": 60 }
+  },
+  "rewrites": [{ "source": "/api", "destination": "/api/index.py" }]
+}
