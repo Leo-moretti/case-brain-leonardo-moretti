@@ -10,13 +10,46 @@ Exercício 1. Programa Pontua+
 
 ## Como rodar
 
-**Com Docker (um comando).** Sobe o dashboard e o agente em http://localhost:8501. O build da imagem constrói o warehouse e roda os testes; se um número estiver errado, o build falha.
+### 1. Gerar a chave do Gemini (gratuita)
+
+1. Acesse https://aistudio.google.com/apikey com qualquer conta Google.
+2. Clique em **Create API key** (ou "Criar chave de API") e escolha ou crie um projeto.
+3. Copie a chave. Ela não deve ir para o git.
+4. Na raiz do repositório, crie um arquivo `.env`. Ele já está no `.gitignore` e no `.dockerignore`. Coloque nele:
+   ```
+   GEMINI_API_KEY=<sua_chave>
+   ```
+
+Sem chave, tudo funciona, exceto o chat: o dashboard mostra o aviso "agente indisponível".
+
+### 2. Subir com Docker (recomendado; versão completa)
+
+Pré-requisito: Docker com Compose. No Windows/WSL, ative a integração WSL no Docker Desktop.
 
 ```bash
+docker compose up --build        # lê GEMINI_API_KEY do .env
+# ou, sem .env:
 GEMINI_API_KEY=<sua_chave> docker compose up --build
 ```
 
-**Sem Docker (Python 3.11+).**
+- O primeiro build leva alguns minutos. A imagem roda o pipeline, os guardrails de qualidade e os 86 testes (~2 min); se um número estiver errado, o build falha.
+- Acesse http://localhost:8501. Por segurança, a porta é publicada só em `127.0.0.1`, porque o painel não tem autenticação.
+- Para aplicar mudanças de código: `docker compose up -d --build`. Para parar: `docker compose down`.
+
+### 3. Subir na Vercel (versão simplificada)
+
+O Streamlit não roda em serverless. Na Vercel sobe uma versão enxuta: uma página com as metas e o chat ([public/index.html](public/index.html)) e uma função Python ([api/index.py](api/index.py)) que serve as tabelas gold agregadas e o agente, com as mesmas guardas.
+
+1. Em https://vercel.com, clique em **Add New → Project** e importe este repositório (branch `entrega` ou `main`).
+2. Em **Environment Variables**, adicione `GEMINI_API_KEY` (e, se quiser, `GEMINI_MODEL`).
+3. Clique em **Deploy**. O [vercel.json](vercel.json) já define o build: ele instala as dependências, roda o pipeline e exporta um SQLite **só com as tabelas gold** (`python -m pipeline.export_gold`, ~4,6 MB). Bronze e silver não sobem.
+4. Acesse a URL gerada. O endpoint `GET /api?tabela=gold_metas_mensal` devolve JSON e `POST /api {"pergunta": "..."}` consulta o agente.
+
+Pela CLI, como alternativa: `npm i -g vercel`, depois `vercel env add GEMINI_API_KEY` e `vercel --prod`.
+
+Situação: a função e a página foram testadas localmente. **O deploy real na Vercel não foi testado.** Na Vercel, a trilha de auditoria do agente vai para `/tmp`, que é efêmero; em produção, envie a trilha para um log externo.
+
+### 4. Rodar sem Docker (Python 3.11+)
 
 ```bash
 python -m venv .venv && source .venv/bin/activate
@@ -29,7 +62,9 @@ streamlit run app/dashboard.py    # dashboard + agente
 
 Os CSVs ficam em `dados/`, como vieram. O build confere o SHA-256 de cada arquivo contra `MANIFESTO_v1.csv` (diferença gera alerta, não bloqueio, para aceitar novas cargas) e roda os guardrails de qualidade descritos abaixo.
 
-**Variáveis de ambiente do agente** (podem ir num `.env`, que está no `.gitignore`):
+### Variáveis de ambiente
+
+Todas podem ir no `.env`:
 
 | Variável | Padrão | Uso |
 |---|---|---|
@@ -39,7 +74,6 @@ Os CSVs ficam em `dados/`, como vieram. O build confere o SHA-256 de cada arquiv
 | `OLLAMA_HOST` | `http://localhost:11434` | servidor Ollama local (no Docker: `http://host.docker.internal:11434`) |
 | `OLLAMA_MODEL` | `llama3.1` | modelo local |
 
-Sem chave, o dashboard funciona normalmente e só a aba "Pergunte aos dados" mostra o aviso de agente indisponível.
 
 ## Entregáveis
 
