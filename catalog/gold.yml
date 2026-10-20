@@ -1,0 +1,221 @@
+# Catálogo semântico da camada gold. Fonte única de documentação para o dashboard e o agente.
+# É carregado no SQLite nas tabelas meta_tabelas e meta_colunas pelo pipeline.
+regras_gerais:
+  - "Resgate efetivado = item com status APROVADO. Estornados, cancelados e inválidos aparecem em colunas próprias."
+  - "COMPRA_PONTOS (cliente compra pontos em R$) NÃO é resgate e está fora de todas as tabelas de resgate."
+  - "Pix foi lançado em 27/05/2026. Taxa contratual R$ 0,019 por ponto."
+  - "Metas contratuais: aéreas >= 50% e varejo >= 20% dos pontos resgatados no mês."
+  - "Varejo (categoria do sistema) inclui transferências para programas parceiros; varejo_produto exclui. A definição contratual ainda não foi confirmada."
+  - "Em 12/01/2026 houve um lote atípico de 1.520 resgates de aéreas (flag_lote_20260112). Use as colunas *_sem_lote para comparar tendência."
+  - "Breakage do programa novo não é mensurável: nenhum crédito venceu até a extração (01/10/2026)."
+  - "Custo do programa / quanto o programa paga = custo_pontos_reais (valor do produto coberto por pontos, sem o copagamento do cliente), em gold_resgates_mensal ou gold_fct_resgate. O que NÃO existe é quanto o banco paga ao programa por ponto (receita) nem margem."
+  - "Datas em horário de Brasília (-03:00). mes no formato YYYY-MM."
+  - "Dados de 01/10/2025 a 30/09/2026. Extração em 01/10/2026."
+
+# Regras de tratamento INFERIDAS (README do case + EDA + experiência de desenvolvimento), sem confirmação do negócio.
+# status: pendente_validacao_negocio | validada | rejeitada. Carregadas em meta_regras_inferidas e citadas pelo agente.
+regras_inferidas:
+  - id: R01
+    regra: "Resgate efetivado = item com status APROVADO (ESTORNADO, CANCELADO, INVALIDO e AGUARDANDO ficam fora das metas e custos)"
+    origem: "EDA: só APROVADO e ESTORNADO debitam o ledger; experiência"
+    impacto: "Todas as métricas de resgate, metas e custo"
+    status: pendente_validacao_negocio
+  - id: R02
+    regra: "Metas usam o total de pontos resgatados com o Pix no denominador"
+    origem: "README do case ('total de pontos resgatados')"
+    impacto: "Varejo 12-13% (com Pix) vs 17-19% (sem Pix); ambos abaixo de 20%"
+    status: pendente_validacao_negocio
+  - id: R03
+    regra: "Varejo = category_macro Varejo, incluindo transferências para parceiros (alternativa varejo_produto disponível)"
+    origem: "Categoria do sistema; README cita transferências como modalidade separada"
+    impacto: "Varejo sem transferências cai ~1 p.p. após o Pix e ~4-5 p.p. antes"
+    status: pendente_validacao_negocio
+  - id: R04
+    regra: "COMPRA_PONTOS não é resgate e sai das métricas, apesar de estar em Cashback"
+    origem: "EDA: paid_points vazio, pago em R$"
+    impacto: "Exclui 520 itens"
+    status: pendente_validacao_negocio
+  - id: R05
+    regra: "Usuário do pedido vem de carts.user_id (orders.user_id é 100% vazio)"
+    origem: "EDA: carts 1:1 com orders"
+    impacto: "Toda análise por usuário"
+    status: pendente_validacao_negocio
+  - id: R06
+    regra: "Usuário de evento CRM sem user_id é recuperado por device_id"
+    origem: "EDA: device -> user 1:1"
+    impacto: "20.252 eventos; análise da campanha Pix"
+    status: pendente_validacao_negocio
+  - id: R07
+    regra: "Lote de aéreas de 12/01/2026 é atípico e sinalizado (flag_lote_20260112), sem ser excluído"
+    origem: "EDA: 1.520 itens em 24 h, 99,7% migrados"
+    impacto: "Aéreas jan/26 97% (com) vs 77% (sem)"
+    status: pendente_validacao_negocio
+  - id: R08
+    regra: "product_value representa o custo para o programa; custo coberto por pontos = product_value - paid_currency"
+    origem: "Hipótese de experiência"
+    impacto: "Custo por ponto por modalidade e recomendação de taxa do Pix"
+    status: pendente_validacao_negocio
+  - id: R09
+    regra: "event_ts do CRM está em horário local (sem fuso na origem)"
+    origem: "Hipótese; alinhamento com orders inconclusivo"
+    impacto: "Ordem Pix antes/depois do e-mail (20 casos)"
+    status: pendente_validacao_negocio
+  - id: R10
+    regra: "Adoção do Pix na campanha = Pix APROVADO ou ESTORNADO; usou_pix (dim_usuario) = só APROVADO"
+    origem: "Decisão de modelagem"
+    impacto: "2.172 vs 2.140 usuários"
+    status: pendente_validacao_negocio
+
+tabelas:
+  gold_metas_mensal:
+    grao: "1 linha por mês"
+    descricao: "Composição dos pontos resgatados (aprovados) por mês e atingimento das metas de aéreas e varejo."
+    colunas:
+      mes: "Mês do resgate (YYYY-MM)."
+      pontos_total: "Pontos resgatados aprovados no mês, todas as modalidades."
+      pontos_aereas: "Pontos resgatados em passagens aéreas."
+      pontos_varejo: "Pontos em varejo pela categoria do sistema (produtos + transferências para parceiros)."
+      pontos_varejo_produto: "Pontos em produtos de varejo (sem transferências)."
+      pontos_pix: "Pontos trocados por dinheiro via Pix."
+      aereas_pct: "% de aéreas sobre o total de pontos resgatados. Meta >= 50."
+      varejo_pct: "% de varejo (categoria do sistema) sobre o total. Meta >= 20."
+      varejo_produto_pct: "% de varejo só produtos sobre o total (definição alternativa)."
+      pix_pct: "% de Pix sobre o total."
+      aereas_pct_sem_pix: "% de aéreas se o Pix fosse excluído do denominador (interpretação alternativa do contrato)."
+      varejo_pct_sem_pix: "% de varejo se o Pix fosse excluído do denominador."
+      aereas_pct_sem_lote: "% de aéreas excluindo o lote atípico de 12/01/2026."
+      atinge_meta_aereas: "1 se aereas_pct >= 50."
+      atinge_meta_varejo: "1 se varejo_pct >= 20."
+
+  gold_resgates_mensal:
+    grao: "1 linha por mês x modalidade"
+    descricao: "Volume, usuários, cancelamentos e custo dos resgates por mês e modalidade."
+    colunas:
+      mes: "Mês do resgate (YYYY-MM)."
+      modalidade: "AEREAS, VAREJO_PRODUTO, TRANSFERENCIA_PARCEIRO ou PIX."
+      itens_total: "Itens de resgate em qualquer status."
+      itens_aprovados: "Itens com status APROVADO."
+      itens_cancelados_invalidos: "Itens CANCELADO ou INVALIDO (não debitam pontos)."
+      itens_estornados: "Itens ESTORNADO (pontos devolvidos)."
+      pontos_aprovados: "Pontos de itens aprovados."
+      pontos_aprovados_sem_lote: "Pontos aprovados excluindo o lote de 12/01/2026."
+      pontos_estornados: "Pontos de itens estornados."
+      usuarios_aprovados: "Usuários distintos com resgate aprovado."
+      valor_produto_reais: "Valor em R$ dos produtos aprovados (inclui copagamento)."
+      copagamento_reais: "R$ pagos pelo cliente além dos pontos."
+      custo_pontos_reais: "valor_produto_reais - copagamento_reais: custo coberto por pontos."
+      custo_por_ponto_reais: "R$ por ponto resgatado. Pix = 0,019."
+
+  gold_fct_resgate:
+    grao: "1 linha por item de resgate (order_item_id), todos os status"
+    descricao: "Fato detalhado de resgates. Use para cortes não previstos nos agregados (canal, fornecedor, classe de cartão)."
+    colunas:
+      order_item_id: "Identificador do item."
+      order_id: "Identificador do pedido."
+      user_id: "Identificador do usuário (vem de carts; orders.user_id é vazio na origem)."
+      card_class_atual: "Classe do cartão mais recente do usuário (Essencial < Gold < Platinum < Platinum Elo < Infinite < Black)."
+      channel: "APP ou WEB."
+      created_at: "Data e hora do pedido (-03:00)."
+      created_date: "Data do pedido (YYYY-MM-DD)."
+      mes: "Mês do pedido (YYYY-MM)."
+      periodo_pix: "PRE_PIX ou POS_PIX (corte em 27/05/2026)."
+      status: "APROVADO, ESTORNADO, CANCELADO, INVALIDO, AGUARDANDO_CONFIRMACAO."
+      modalidade: "AEREAS, VAREJO_PRODUTO, TRANSFERENCIA_PARCEIRO ou PIX."
+      category_macro: "Categoria original do sistema (Aereas, Varejo, Cashback)."
+      product_type: "PASSAGEM, PRODUTO ou TRANSFERENCIA."
+      supplier_name: "Fornecedor do produto."
+      supplier_responsible: "Quem responde pelo pedido (difere em marketplace)."
+      pontos: "Pontos pagos no item."
+      copagamento_reais: "R$ pagos pelo cliente além dos pontos."
+      valor_produto_reais: "Valor do produto em R$."
+      custo_pontos_reais: "Parte do valor coberta por pontos (valor - copagamento)."
+      pontos_estornados_parcial: "Pontos devolvidos parcialmente em itens aprovados."
+      is_aprovado: "1 se status = APROVADO."
+      flag_lote_20260112: "1 se faz parte do lote atípico de aéreas de 12/01/2026."
+
+  gold_dim_usuario:
+    grao: "1 linha por usuário"
+    descricao: "Atributos do usuário: cartão atual, migração e comportamento de resgate."
+    colunas:
+      user_id: "Identificador do usuário."
+      card_class_atual: "Classe do cartão mais recente."
+      card_class_rank: "Ordem da classe (1 = Essencial ... 6 = Black)."
+      card_flag_atual: "Bandeira do cartão mais recente."
+      qtd_contas: "Quantidade de contas/cartões do usuário."
+      tem_saldo_migrado: "1 se recebeu saldo do programa anterior."
+      primeiro_resgate_em: "Data/hora do primeiro resgate aprovado."
+      primeiro_pix_em: "Data/hora do primeiro Pix aprovado."
+      usou_pix: "1 se tem Pix aprovado."
+      resgatou_antes_pix: "1 se tinha resgate aprovado antes de 27/05/2026."
+
+  gold_pontos_mensal:
+    grao: "1 linha por mês"
+    descricao: "Movimentação do saldo de pontos (ledger): créditos, migração, resgates, estornos, expirações e saldo acumulado (passivo)."
+    colunas:
+      mes: "Mês do movimento (YYYY-MM)."
+      pontos_creditados: "Pontos ganhos com uso do cartão."
+      pontos_migrados: "Saldo migrado do programa anterior."
+      pontos_resgatados: "Pontos debitados por resgate."
+      pontos_estornados: "Pontos devolvidos por estorno de pedido."
+      pontos_expirados: "Pontos expirados (hoje só expiração de saldo migrado)."
+      variacao_saldo: "Variação líquida do saldo no mês."
+      saldo_acumulado: "Saldo total em aberto ao fim do mês (passivo de pontos)."
+
+  gold_conciliacao_operador:
+    grao: "1 linha por mês do relatório do operador"
+    descricao: "Relatório do operador ao banco comparado com o recálculo a partir dos sistemas de origem."
+    colunas:
+      mes: "Mês (YYYY-MM)."
+      aereas_pct_relatorio: "% aéreas reportado pelo operador."
+      aereas_pct_calculado: "% aéreas recalculado (aprovados)."
+      varejo_pct_relatorio: "% varejo reportado."
+      varejo_pct_calculado: "% varejo recalculado."
+      pix_pct_relatorio: "% Pix reportado."
+      pix_pct_calculado: "% Pix recalculado."
+      pix_transacoes_relatorio: "Transações Pix reportadas."
+      pix_transacoes_todos_status: "Itens Pix em qualquer status."
+      pix_transacoes_aprovadas: "Itens Pix aprovados."
+      pix_pontos_relatorio: "Pontos Pix reportados."
+      pix_pontos_todos_status: "Pontos Pix somando todos os status (inclui cancelados)."
+      pix_pontos_aprovados: "Pontos Pix aprovados."
+      pix_reais_relatorio: "R$ Pix reportados."
+      pix_reais_aprovados: "R$ Pix de itens aprovados."
+      reais_por_ponto_relatorio: "pix_reais / pix_pontos do relatório (~0,016)."
+      reais_por_ponto_real: "R$/ponto real dos aprovados (0,019)."
+      emails_relatorio: "E-mails enviados segundo o relatório."
+      emails_crm: "E-mails enviados segundo o CRM."
+      push_relatorio: "Pushes enviados segundo o relatório."
+      push_crm: "Pushes mobile enviados segundo o CRM."
+
+  gold_campanha_pix:
+    grao: "1 linha por grupo de exposição à campanha de lançamento do Pix"
+    descricao: "Adoção do Pix por grupo de exposição ao e-mail de lançamento. Observacional: não há grupo de controle formal."
+    colunas:
+      grupo: "1_nao_recebeu, 2_recebeu_nao_abriu, 3_recebeu_e_abriu."
+      usuarios: "Usuários no grupo."
+      usuarios_pix: "Usuários do grupo que usaram Pix."
+      adocao_pix_pct: "% do grupo que usou Pix."
+      resgatadores_previos_pct: "% do grupo que já resgatava antes do Pix (checa viés de seleção)."
+      usuarios_pix_antes_do_email: "Usuários que usaram Pix antes do primeiro envio da campanha."
+
+  dq_resultados:
+    grao: "1 linha por check de qualidade da última carga"
+    descricao: "Resultado dos guardrails de qualidade de dados. Consulte quando a pergunta for sobre confiabilidade dos dados ou se houver alerta relevante para a resposta."
+    colunas:
+      run_id: "Identificador da execução."
+      executado_em: "Data/hora da execução (UTC)."
+      check_id: "Identificador do check (ver quality/checks.yml)."
+      camada: "entrada, bronze, silver ou gold."
+      severidade: "bloqueante (interrompe a carga), alerta ou info."
+      descricao: "O que o check verifica."
+      valor: "Valor medido."
+      regra: "Regra esperada (= / <= / >=)."
+      status: "ok, falha ou erro."
+
+  gold_breakage:
+    grao: "1 linha por métrica candidata"
+    descricao: "Métricas candidatas de breakage e por que nenhuma reproduz os 40% citados."
+    colunas:
+      metrica: "Nome da métrica."
+      valor: "Valor (percentual, pontos ou data)."
+      descricao: "Definição e ressalva."

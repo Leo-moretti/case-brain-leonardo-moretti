@@ -3,3 +3,10 @@ storytelling_diretoria.md
 .claude/
 linha_do_tempo.sh
 .env
+
+# gerados
+.venv/
+warehouse/
+__pycache__/
+.pytest_cache/
+api/pontua_gold.db

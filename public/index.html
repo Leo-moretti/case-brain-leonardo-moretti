@@ -1,0 +1,49 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Pontua+ · Diretoria</title>
+<style>
+  :root { --bg:#fff; --fg:#1d2433; --muted:#667085; --line:#e4e7ec; --warn:#c2410c; }
+  @media (prefers-color-scheme: dark) { :root { --bg:#0f141c; --fg:#e6e9ef; --muted:#98a2b3; --line:#2a3240; } }
+  body { margin:0; padding:16px; font-family:system-ui,sans-serif; background:var(--bg); color:var(--fg); }
+  main { max-width:960px; margin:auto; } table { width:100%; border-collapse:collapse; font-size:14px; }
+  th,td { padding:6px 8px; border-bottom:1px solid var(--line); text-align:right; } th:first-child,td:first-child { text-align:left; }
+  .abaixo { color:var(--warn); font-weight:600; } small { color:var(--muted); }
+  textarea { width:100%; box-sizing:border-box; min-height:60px; } pre { white-space:pre-wrap; }
+  .scroll { overflow-x:auto; }
+</style>
+</head>
+<body><main>
+<h1>Pontua+ · Painel da diretoria</h1>
+<small>Versão serverless simplificada (o painel completo é o Streamlit via Docker) · valores gerenciais, não contábeis</small>
+<h2>Metas mensais</h2>
+<div class="scroll"><table id="metas"><thead><tr><th>Mês</th><th>Aéreas %</th><th>Varejo %</th><th>Pix %</th><th>Pontos</th></tr></thead><tbody></tbody></table></div>
+<h2>Pergunte aos dados</h2>
+<textarea id="q" placeholder="Ex.: qual o percentual de varejo em setembro?"></textarea>
+<button id="ask">Perguntar</button>
+<pre id="a"></pre>
+</main>
+<script>
+fetch('/api?tabela=gold_metas_mensal').then(r => r.json()).then(rows => {
+  const tb = document.querySelector('#metas tbody');
+  rows.forEach(m => {
+    const tr = document.createElement('tr');
+    [m.mes, m.aereas_pct, m.varejo_pct, m.pix_pct, m.pontos_total.toLocaleString('pt-BR')].forEach((v, i) => {
+      const td = document.createElement('td'); td.textContent = v;
+      if ((i === 1 && v < 50) || (i === 2 && v < 20)) td.className = 'abaixo';
+      tr.appendChild(td);
+    });
+    tb.appendChild(tr);
+  });
+});
+document.getElementById('ask').onclick = async () => {
+  const a = document.getElementById('a'); a.textContent = 'Consultando...';
+  try {
+    const r = await fetch('/api', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ pergunta: document.getElementById('q').value }) });
+    const j = await r.json(); a.textContent = j.resposta || j.erro;
+  } catch (e) { a.textContent = 'Agente indisponível.'; }
+};
+</script>
+</body></html>
