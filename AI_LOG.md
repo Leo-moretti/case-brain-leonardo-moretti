@@ -84,6 +84,22 @@ Uma entrada por sessão, da mais antiga para a mais recente. Formato e regras em
       - 7 testes novos;
       - `docs/SEGURANCA_COMPLIANCE.md`.
     - **Não resolvido e documentado:** centavos em inteiro, trilha WORM, autenticação e identidade de quem pergunta, separação de acesso entre camadas, contratação de LLM externa (Res. CMN 4.893/2021), base legal e retenção. A IA ressalvou que a revisão é técnica e não substitui parecer jurídico ou de conformidade.
+  - **Validação de número de cartão (pedido do candidato):**
+    - **Pedido:** o candidato pediu a validação matemática de número de cartão, para saber se o ID em `carts` é identificador de sistema ou dado de cartão exposto.
+    - **Correção de termo:** a IA apontou que `carts` tem `cart_id`, não `card_id`, e incluiu na análise o `account_id` de `cards` e os demais IDs.
+    - **Método:** Luhn (mod 10), comprimento de PAN e prefixo de bandeira, em `pipeline/pan_check.py`.
+    - **Resultado:**
+      - todas as 13 colunas têm 12 dígitos (um PAN tem 13 a 19);
+      - passam no Luhn em 9,7–10,3% dos valores, a taxa de acaso;
+      - não concentram prefixos de bandeira.
+    - **Conclusão:** são identificadores de sistema, não PAN. Teste em `tests/test_pan_check.py`.
+  - **Documentação de governança (pedido do candidato):**
+    - **Pedido:** o candidato pediu anotar as melhorias futuras de guardrails, criar o documento de classificação de dados e o dicionário de dados, e fazer o commit.
+    - **O que a IA fez:**
+      - seção "Melhorias futuras de guardrails" no README, com 10 itens priorizados;
+      - `docs/CLASSIFICACAO_DADOS.md`, com 4 níveis e classificação por campo, por camada e por saída;
+      - `docs/DICIONARIO_DADOS.md`, com as 9 fontes, tipos, nulos e domínios vindos da EDA.
+    - **Ressalva da IA:** os níveis de classificação são uma proposta e devem ser alinhados à política da instituição.
   - **Revisão do candidato — pendente**, iniciada após esta entrada. Preencher com o resultado:
     - [ ] Números da apresentação e da recomendação conferidos com `python -m pipeline.eda`
     - [ ] Pegadinhas da EDA conferidas (amostra)

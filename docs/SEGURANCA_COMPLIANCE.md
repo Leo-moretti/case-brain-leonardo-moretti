@@ -9,6 +9,7 @@ Revisão técnica do POC. Não é parecer jurídico nem atestado de conformidade
 | Identificação direta (nome, CPF, e-mail, telefone, endereço) | **Não existe nos dados.** As ocorrências de "email" são rótulos (`campaign_type = Email`, `emails_enviados`). O JSON do CRM só tem `campaign_name`, `open_count`, `link`, `source`, `reason`, `audience` e `platform` |
 | Identificadores pseudonimizados | `user_id`, `account_id`, `device_id`, `order_id`, `cart_id`. Continuam sendo **dado pessoal** pela LGPD, porque o controlador consegue reidentificar |
 | Dados pessoais sensíveis (LGPD, art. 5º, II) | Não há (saúde, origem racial, biometria etc.) |
+| Número de cartão (PAN) exposto como identificador | **Não há.** `python -m pipeline.pan_check` testa todas as colunas de ID. Todas têm 12 dígitos (um PAN tem 13 a 19), passam no Luhn em 9,7–10,3% dos valores (o acaso esperado para números aleatórios é ~10%; um PAN passaria em ~100%) e não concentram prefixos de bandeira. `account_id` e `cart_id` são identificadores de sistema |
 | Dados sob sigilo bancário | Classe e bandeira do cartão e o histórico de resgates por cliente são dados de relacionamento bancário. Ficam na bronze, na silver e em 2 tabelas gold de grão individual |
 
 **Exposição por canal**

@@ -22,7 +22,7 @@ GEMINI_API_KEY=<sua_chave> docker compose up --build
 python -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
 python -m pipeline.build          # CSVs -> warehouse/pontua.db (bronze, silver, gold)
-python -m pytest                  # 70 testes (~2 min)
+python -m pytest                  # 84 testes (~2 min)
 python -m pipeline.eda            # imprime todos os números citados na apresentação
 streamlit run app/dashboard.py    # dashboard + agente
 ```
@@ -55,6 +55,8 @@ Sem chave, o dashboard funciona normalmente e só a aba "Pergunte aos dados" mos
 | Agente | [agent/core.py](agent/core.py) |
 | Registro de uso de IA | [AI_LOG.md](AI_LOG.md) |
 | Segurança, privacidade (LGPD) e auditabilidade | [docs/SEGURANCA_COMPLIANCE.md](docs/SEGURANCA_COMPLIANCE.md) |
+| Dicionário de dados (fontes) | [docs/DICIONARIO_DADOS.md](docs/DICIONARIO_DADOS.md) |
+| Classificação de dados | [docs/CLASSIFICACAO_DADOS.md](docs/CLASSIFICACAO_DADOS.md) |
 
 ## Respostas em resumo
 
@@ -149,7 +151,7 @@ Outros exemplos esperados (ainda não executados):
 
 ## Testes
 
-São 70 testes (`python -m pytest`, ~2 min), que reconstroem o warehouse do zero a partir dos CSVs:
+São 84 testes (`python -m pytest`, ~2 min), que reconstroem o warehouse do zero a partir dos CSVs:
 - **Carga:** contagem de linhas por arquivo = manifesto. O hash é verificado no build.
 - **Chaves:** unicidade e não nulidade da chave de cada modelo silver/gold; grão de `gold_resgates_mensal`.
 - **Integridade referencial:** item → pedido, ledger → cartões, um cartão mais recente por usuário, códigos de operação conhecidos, nenhum usuário sem resolução.
@@ -195,6 +197,20 @@ CSVs ─► entrada (arquivo existe, hash) ─► bronze (contrato de colunas, c
 - **Na v1:** 48 checks, nenhum bloqueante falha. Um alerta real dispara: o relatório do operador diverge 22,7% nos pontos Pix.
 - **Detector de picos:** valida dias com mais de 10× a mediana diária da modalidade. Sem a exclusão do lote conhecido, ele pega exatamente 12/01/2026 (1.520 itens contra a mediana de 21) e nenhum outro dia.
 - **Testes ([tests/test_quality.py](tests/test_quality.py)):** simulam cargas corrompidas e verificam que a carga é bloqueada, que o warehouse anterior fica intacto e que o alerta é gerado. Cenários: status novo, coluna renomeada, item duplicado, timestamp em UTC e arquivo ausente. Também simulam uma mudança da taxa do Pix e verificam que ela só gera alerta e publica.
+
+### Melhorias futuras de guardrails
+
+Ainda não implementadas, em ordem de prioridade:
+1. **Detecção de número de cartão como bloqueante.** Rodar o Luhn de `pipeline/pan_check.py` em toda carga e barrar colunas com valores de 13–19 dígitos e taxa de Luhn acima de 90%. O mesmo vale para padrões de CPF e e-mail em campos livres, como `event_properties`.
+2. **k-anonimato no agente.** Além de bloquear identificadores, recusar resultados agregados com grupos de menos de 10 usuários.
+3. **Limites estatísticos dinâmicos.** Trocar os limites fixos (8%, 25%, 10× a mediana) por bandas calculadas no histórico `dq_historico.jsonl` (média ± k desvios, sazonalidade por dia da semana).
+4. **Checks de frescor e completude por data de extração,** com SLA de chegada por arquivo e alerta de atraso.
+5. **Carga incremental com idempotência:** chave de deduplicação por arquivo e período, com quarentena das linhas rejeitadas em vez de bloquear a carga inteira.
+6. **Valores monetários em centavos inteiros** já na silver, com checks de soma ao centavo.
+7. **Contratos versionados** (schema em JSON Schema ou similar) acordados com os donos dos sistemas de origem, com alerta de mudança antes da carga.
+8. **Canal de alerta real** (Slack, e-mail, PagerDuty) com deduplicação e reconhecimento, para que problemas conhecidos não gerem ruído a cada carga.
+9. **Trilha de auditoria imutável** (WORM) e identidade do usuário via SSO em cada registro.
+10. **Execução agendada e observável** (orquestrador com histórico, retries e painel de SLA).
 
 ## Segurança e auditabilidade
 
