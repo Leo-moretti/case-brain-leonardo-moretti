@@ -1,0 +1,297 @@
+# Guardrails de qualidade de dados. Para adicionar um check, acrescente uma entrada; nenhum código muda.
+#
+# severidade:
+#   bloqueante -> interrompe o build; o warehouse publicado anterior é mantido
+#   alerta     -> dispara alerta e segue
+#   info       -> só registra (problema conhecido, monitorado)
+# regra: o SQL devolve um único número (valor), comparado com max / min / igual.
+# Os problemas conhecidos da v1 estão como alerta/info com limites calibrados: o alerta dispara se piorarem.
+
+contratos:   # colunas esperadas por arquivo (ordem e nome). Coluna nova, faltante ou renomeada = bloqueante
+  orders: [order_id, cart_id, user_id, created_at, status, status_updated_at]
+  order_items: [order_item_id, order_id, created_at, status, product_type, supplier_name, supplier_responsible,
+                category_macro, paid_points, paid_currency, product_value, refunded_points, quantity]
+  carts: [cart_id, user_id, channel]
+  points_ledger: [movement_id, user_id, account_id, operation_code, points, movement_at, valid_until]
+  dim_operation: [operation_code, operation_name, direction]
+  cards: [account_id, user_id, card_class, card_flag, created_at, is_most_recent]
+  redeemed_points: [order_item_id, account_id, movement_type, points]
+  crm_events: [event_ts, user_id, device_id, event_name, campaign_type, campaign_id, control_group, event_properties]
+  relatorio_mensal_cliente: [mes, aereas_pct, varejo_pct, pix_pct, pix_reais, pix_pontos, pix_transacoes,
+                             emails_enviados, push_enviados]
+
+checks:
+  # ---------- bronze: contrato de entrada ----------
+  - id: bronze_arquivos_nao_vazios
+    camada: bronze
+    severidade: bloqueante
+    descricao: Arquivos transacionais vazios
+    sql: >
+      SELECT (SELECT COUNT(*) = 0 FROM bronze_orders) + (SELECT COUNT(*) = 0 FROM bronze_order_items)
+           + (SELECT COUNT(*) = 0 FROM bronze_points_ledger) + (SELECT COUNT(*) = 0 FROM bronze_cards)
+    igual: 0
+
+  - id: bronze_pk_duplicada
+    camada: bronze
+    severidade: bloqueante
+    descricao: Chaves primárias duplicadas ou nulas (orders, order_items, carts, ledger, cards)
+    sql: >
+      SELECT (SELECT COUNT(*) - COUNT(DISTINCT order_id) FROM bronze_orders)
+           + (SELECT COUNT(*) - COUNT(DISTINCT order_item_id) FROM bronze_order_items)
+           + (SELECT COUNT(*) - COUNT(DISTINCT cart_id) FROM bronze_carts)
+           + (SELECT COUNT(*) - COUNT(DISTINCT movement_id) FROM bronze_points_ledger)
+           + (SELECT COUNT(*) - COUNT(DISTINCT account_id) FROM bronze_cards)
+    igual: 0
+
+  - id: bronze_dominio_status
+    camada: bronze
+    severidade: bloqueante
+    descricao: Status de pedido/item fora do domínio conhecido (sumiria das métricas)
+    sql: >
+      SELECT COUNT(*) FROM (SELECT status FROM bronze_orders UNION ALL SELECT status FROM bronze_order_items)
+      WHERE status NOT IN ('APROVADO','CANCELADO','FINALIZADO_COM_SUCESSO','ESTORNADO','INVALIDO','AGUARDANDO_CONFIRMACAO')
+    igual: 0
+
+  - id: bronze_dominio_produto
+    camada: bronze
+    severidade: bloqueante
+    descricao: product_type ou category_macro novos (quebrariam a regra de modalidade)
+    sql: >
+      SELECT COUNT(*) FROM bronze_order_items
+      WHERE product_type NOT IN ('PASSAGEM','PRODUTO','TRANSFERENCIA','COMPRA_PONTOS')
+         OR category_macro NOT IN ('Aereas','Varejo','Cashback')
+    igual: 0
+
+  - id: bronze_dominio_operacao_ledger
+    camada: bronze
+    severidade: bloqueante
+    descricao: operation_code do ledger ausente em dim_operation
+    sql: >
+      SELECT COUNT(*) FROM bronze_points_ledger l
+      WHERE NOT EXISTS (SELECT 1 FROM bronze_dim_operation d WHERE d.operation_code = l.operation_code)
+    igual: 0
+
+  - id: bronze_dominio_diversos
+    camada: bronze
+    severidade: bloqueante
+    descricao: canal, classe de cartão ou tipo de movimento de resgate fora do domínio
+    sql: >
+      SELECT (SELECT COUNT(*) FROM bronze_carts WHERE channel NOT IN ('APP','WEB'))
+           + (SELECT COUNT(*) FROM bronze_cards WHERE card_class NOT IN ('Essencial','Gold','Platinum','Platinum Elo','Infinite','Black'))
+           + (SELECT COUNT(*) FROM bronze_redeemed_points WHERE movement_type NOT IN ('RESGATE','RESERVA','CANCELADO_RESERVA'))
+    igual: 0
+
+  - id: bronze_formato_timestamp
+    camada: bronze
+    severidade: bloqueante
+    descricao: Timestamps fora do formato 'YYYY-MM-DD HH:MM:SS-03:00' (mês é derivado por posição)
+    sql: >
+      SELECT COUNT(*) FROM (
+        SELECT created_at t FROM bronze_orders UNION ALL SELECT created_at FROM bronze_order_items
+        UNION ALL SELECT movement_at FROM bronze_points_ledger)
+      WHERE t NOT GLOB '[0-9][0-9][0-9][0-9]-[0-1][0-9]-[0-3][0-9] [0-2][0-9]:[0-5][0-9]:[0-5][0-9]-03:00'
+    igual: 0
+
+  - id: bronze_pontos_nao_numericos
+    camada: bronze
+    severidade: bloqueante
+    descricao: paid_points vazio ou não numérico em item de resgate
+    sql: >
+      SELECT COUNT(*) FROM bronze_order_items
+      WHERE product_type <> 'COMPRA_PONTOS' AND (paid_points IS NULL OR paid_points GLOB '*[^0-9]*')
+    igual: 0
+
+  - id: bronze_orders_user_id_preenchido
+    camada: bronze
+    severidade: info
+    descricao: orders.user_id passou a vir preenchido (hoje 100% vazio; regra usa carts). Se mudar, revisar a regra
+    sql: SELECT COUNT(*) FROM bronze_orders WHERE user_id IS NOT NULL
+    igual: 0
+
+  # ---------- silver: integridade após limpeza ----------
+  - id: silver_pedido_sem_usuario
+    camada: silver
+    severidade: bloqueante
+    descricao: Pedido sem usuário resolvido via carts
+    sql: SELECT COUNT(*) FROM silver_orders WHERE user_id IS NULL
+    igual: 0
+
+  - id: silver_item_sem_pedido
+    camada: silver
+    severidade: bloqueante
+    descricao: Item sem pedido correspondente
+    sql: SELECT COUNT(*) FROM silver_order_items WHERE order_status IS NULL
+    igual: 0
+
+  - id: silver_modalidade_nao_mapeada
+    camada: silver
+    severidade: bloqueante
+    descricao: Item com modalidade OUTRO (combinação de categoria/tipo não prevista)
+    sql: SELECT COUNT(*) FROM silver_order_items WHERE modalidade = 'OUTRO'
+    igual: 0
+
+  - id: silver_cartao_mais_recente_unico
+    camada: silver
+    severidade: bloqueante
+    descricao: Usuário sem exatamente 1 cartão mais recente (duplicaria a dimensão de usuário)
+    sql: SELECT COUNT(*) FROM (SELECT user_id FROM silver_cards GROUP BY 1 HAVING SUM(is_most_recent) <> 1)
+    igual: 0
+
+  - id: silver_sinal_ledger
+    camada: silver
+    severidade: bloqueante
+    descricao: Sinal do ponto incoerente com a direção da operação
+    sql: >
+      SELECT COUNT(*) FROM silver_points_ledger
+      WHERE (direction = 'CREDIT' AND points < 0) OR (direction = 'DEBIT' AND points > 0)
+    igual: 0
+
+  - id: silver_ledger_conta_sem_cartao
+    camada: silver
+    severidade: alerta
+    descricao: Movimento de pontos em conta inexistente em cards
+    sql: >
+      SELECT COUNT(*) FROM silver_points_ledger l
+      WHERE NOT EXISTS (SELECT 1 FROM silver_cards c WHERE c.account_id = l.account_id)
+    igual: 0
+
+  - id: silver_crm_sem_usuario
+    camada: silver
+    severidade: alerta
+    descricao: Evento de CRM sem user_id nem device recuperável
+    sql: SELECT COUNT(*) FROM silver_crm_events WHERE user_id IS NULL
+    igual: 0
+
+  - id: silver_crm_device_multiusuario
+    camada: silver
+    severidade: alerta
+    descricao: device_id ligado a mais de um usuário (recuperação de user_id ficaria ambígua)
+    sql: >
+      SELECT COUNT(*) FROM (SELECT device_id FROM bronze_crm_events WHERE user_id IS NOT NULL
+                            GROUP BY 1 HAVING COUNT(DISTINCT user_id) > 1)
+    igual: 0
+
+  - id: silver_contas_saldo_negativo_pct
+    camada: silver
+    severidade: alerta
+    descricao: "% de contas com saldo negativo (v1: 7,5%; ledger sem saldo de abertura completo)"
+    sql: >
+      SELECT ROUND(100.0 * SUM(s < 0) / COUNT(*), 2)
+      FROM (SELECT account_id, SUM(points) s FROM silver_points_ledger GROUP BY 1)
+    max: 8
+
+  - id: silver_expiracao_migracao_sem_credito_pct
+    camada: silver
+    severidade: alerta
+    descricao: "% de contas com expiração de migração sem crédito de migração (v1: 22,9%)"
+    sql: >
+      SELECT ROUND(100.0 * COUNT(DISTINCT CASE WHEN m.account_id IS NULL THEN e.account_id END)
+                   / COUNT(DISTINCT e.account_id), 2)
+      FROM silver_points_ledger e
+      LEFT JOIN (SELECT DISTINCT account_id FROM silver_points_ledger WHERE operation_code = 100) m USING (account_id)
+      WHERE e.operation_code = 103
+    max: 25
+
+  - id: silver_crm_sem_grupo_controle
+    camada: silver
+    severidade: info
+    descricao: Eventos com control_group preenchido (0 = efeito de campanha não mensurável)
+    sql: SELECT COUNT(*) FROM silver_crm_events WHERE control_group IS NOT NULL
+    min: 0
+
+  # ---------- gold: conciliações que garantem os números ----------
+  - id: gold_conciliacao_resgate_ledger
+    camada: gold
+    severidade: bloqueante
+    descricao: Pontos de RESGATE no ledger diferentes dos itens aprovados + estornados
+    sql: >
+      SELECT ABS((SELECT -SUM(points) FROM silver_points_ledger WHERE operation_code = 2)
+               - (SELECT SUM(paid_points) FROM silver_order_items WHERE status IN ('APROVADO','ESTORNADO')))
+    igual: 0
+
+  - id: gold_conciliacao_estorno_ledger
+    camada: gold
+    severidade: bloqueante
+    descricao: ESTORNO_PEDIDO no ledger diferente de itens estornados + estornos parciais
+    sql: >
+      SELECT ABS((SELECT SUM(points) FROM silver_points_ledger WHERE operation_code = 14)
+               - (SELECT SUM(CASE WHEN status = 'ESTORNADO' THEN paid_points ELSE 0 END) + SUM(refunded_points)
+                  FROM silver_order_items))
+    igual: 0
+
+  - id: gold_conciliacao_redeemed_points
+    camada: gold
+    severidade: bloqueante
+    descricao: Itens cujo RESGATE em redeemed_points difere de paid_points
+    sql: >
+      SELECT COUNT(*) FROM silver_order_items i
+      JOIN (SELECT order_item_id, SUM(points) p FROM silver_redeemed_points WHERE movement_type = 'RESGATE' GROUP BY 1) r
+        USING (order_item_id)
+      WHERE -r.p <> i.paid_points
+    igual: 0
+
+  - id: gold_mensal_igual_fato
+    camada: gold
+    severidade: bloqueante
+    descricao: Agregado mensal diferente do fato de resgates
+    sql: >
+      SELECT ABS((SELECT SUM(pontos_aprovados) FROM gold_resgates_mensal)
+               - (SELECT SUM(pontos) FROM gold_fct_resgate WHERE status = 'APROVADO'))
+    igual: 0
+
+  - id: gold_metas_somam_100
+    camada: gold
+    severidade: bloqueante
+    descricao: Participações de aéreas + varejo + pix não somam 100%
+    sql: SELECT MAX(ABS(aereas_pct + varejo_pct + pix_pct - 100)) FROM gold_metas_mensal
+    max: 0.05
+
+  - id: gold_reservas_zeram
+    camada: gold
+    severidade: alerta
+    descricao: Itens com RESERVA/CANCELADO_RESERVA que não se anulam
+    sql: >
+      SELECT COUNT(*) FROM (SELECT order_item_id FROM silver_redeemed_points
+                            WHERE movement_type IN ('RESERVA','CANCELADO_RESERVA') GROUP BY 1 HAVING SUM(points) <> 0)
+    igual: 0
+
+  - id: gold_taxa_pix
+    camada: gold
+    severidade: alerta
+    descricao: Pix com taxa diferente de R$ 0,019/ponto (mudança contratual ou erro)
+    sql: >
+      SELECT COUNT(*) FROM gold_fct_resgate
+      WHERE modalidade = 'PIX' AND ABS(valor_produto_reais / pontos - 0.019) > 0.00001
+    igual: 0
+
+  - id: gold_operador_diverge_pix_pontos_pct
+    camada: gold
+    severidade: alerta
+    descricao: "Maior divergência % entre pontos Pix do relatório do operador e os aprovados (v1: soma todos os status)"
+    sql: >
+      SELECT ROUND(MAX(100.0 * ABS(pix_pontos_relatorio - pix_pontos_aprovados) / pix_pontos_aprovados), 2)
+      FROM gold_conciliacao_operador WHERE pix_pontos_relatorio IS NOT NULL
+    max: 1
+
+  # ---------- anomalias de volume ----------
+  - id: anomalia_pico_diario_resgates
+    camada: gold
+    severidade: alerta
+    descricao: Dias com itens de uma modalidade > 10x a mediana diária (fora o lote conhecido de 12/01/2026)
+    sql: >
+      WITH d AS (SELECT modalidade, created_date, COUNT(*) n FROM gold_fct_resgate
+                 WHERE flag_lote_20260112 = 0 GROUP BY 1, 2),
+           r AS (SELECT modalidade, n, ROW_NUMBER() OVER (PARTITION BY modalidade ORDER BY n) rn,
+                        COUNT(*) OVER (PARTITION BY modalidade) c FROM d),
+           med AS (SELECT modalidade, AVG(n) mediana FROM r WHERE rn IN ((c + 1) / 2, (c + 2) / 2) GROUP BY 1)
+      SELECT COUNT(*) FROM d JOIN med USING (modalidade) WHERE d.n > 10 * med.mediana
+    igual: 0
+
+  - id: anomalia_frescor_pedidos_ledger
+    camada: gold
+    severidade: alerta
+    descricao: Dias de diferença entre o último pedido e o último movimento do ledger (extração parcial)
+    sql: >
+      SELECT ABS(julianday((SELECT MAX(created_date) FROM silver_order_items))
+               - julianday((SELECT MAX(movement_date) FROM silver_points_ledger)))
+    max: 2

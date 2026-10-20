@@ -52,6 +52,38 @@ Uma entrada por sessão, da mais antiga para a mais recente. Formato e regras em
     - **Modelo:** a pedido do candidato, o padrão do agente mudou de `gemini-2.5-flash` para `gemini-3.8-flash` (`agent/core.py`, `docker-compose.yml`, `README.md`).
     - **Docker:** com a integração WSL ativada pelo candidato, a IA reconstruiu e subiu o container. O build da imagem rodou o pipeline e os 54 testes, que passaram. Ao recriar o container a partir do shell da IA, a chave do Gemini ficou de fora; o candidato subiu de novo com a chave.
     - **Agente (validação do candidato):** testou o agente com `gemini-3.8-flash` e avaliou o resultado como aceitável. Segundo ele, não inventou dados, as proteções (harness) funcionaram e a resposta veio concisa, em bullet points, direto ao ponto.
+  - **Guardrails de qualidade de dados (pedido do candidato):**
+    - **Pedido:** depois de rodar `pipeline.eda` e analisar o resultado, o candidato concluiu que o processo estava suscetível a quebrar ou entregar informação errada. Pediu guardrails para novas entradas de dados, um processo escalável e íntegro, e envio de alerta dummy por ser POC.
+    - **O que a IA fez:**
+      - 48 checks configuráveis em `quality/checks.yml`, com severidades bloqueante, alerta e info, cobrindo entrada, bronze, silver e gold.
+      - Executor em `pipeline/quality.py` e notificador plugável com canal dummy em `pipeline/alerts.py`.
+      - Publicação atômica do warehouse.
+      - Histórico em JSONL e tabela `dq_resultados`, exposta no dashboard e no agente.
+      - 9 testes novos com cargas corrompidas.
+    - **Decisões da IA para o candidato revisar:**
+      - O hash do manifesto deixou de bloquear e virou alerta, porque bloquearia toda carga nova legítima.
+      - Problemas conhecidos da v1 ganharam limites calibrados para alertar quando piorarem.
+      - A divergência do relatório do operador dispara alerta em toda carga, por ser um problema real em aberto.
+    - **Verificado pela IA:** o detector de picos pega exatamente 12/01/2026 quando o lote não é excluído. São 63 testes passando; a suíte passou de ~4 s para ~2 min, porque cada cenário reconstrói o warehouse.
+  - **Revisão de segurança e auditabilidade (pedido do candidato):**
+    - **Pedido:** antes do commit e do restart do container, o candidato pediu verificar exposição de PII, dados sensíveis e aderência à política de segurança. Pediu também verificar se as informações financeiras do dashboard e do agente (valores a receber, descontos, conversões) são auditáveis no padrão Bacen.
+    - **Achados da IA:**
+      - não há PII direta nos dados (as ocorrências de "email" são rótulos);
+      - o agente conseguia devolver `user_id` e `order_id`, e a recusa dependia só do prompt;
+      - as respostas do agente não eram registradas;
+      - a porta do container estava aberta em todas as interfaces, sem autenticação;
+      - não havia indicação de que os valores são gerenciais;
+      - os valores ficam em ponto flutuante;
+      - a mensagem de erro do agente mostrava a exceção crua.
+    - **Correções:**
+      - guarda determinística de identificadores sobre os valores do resultado, que alias não burla;
+      - trilha de auditoria `auditoria_agente.jsonl`;
+      - rodapé "valores gerenciais, não contábeis" com a versão dos dados no agente e no dashboard;
+      - porta publicada só em `127.0.0.1`;
+      - mensagem de erro genérica;
+      - 7 testes novos;
+      - `docs/SEGURANCA_COMPLIANCE.md`.
+    - **Não resolvido e documentado:** centavos em inteiro, trilha WORM, autenticação e identidade de quem pergunta, separação de acesso entre camadas, contratação de LLM externa (Res. CMN 4.893/2021), base legal e retenção. A IA ressalvou que a revisão é técnica e não substitui parecer jurídico ou de conformidade.
   - **Revisão do candidato — pendente**, iniciada após esta entrada. Preencher com o resultado:
     - [ ] Números da apresentação e da recomendação conferidos com `python -m pipeline.eda`
     - [ ] Pegadinhas da EDA conferidas (amostra)
@@ -80,6 +112,7 @@ Uma entrada por sessão, da mais antiga para a mais recente. Formato e regras em
     - [ ] Repositório revisado contra a restrição de nomes
 
 - **Arquivos criados ou alterados:**
+  - `quality/checks.yml`, `pipeline/quality.py`, `pipeline/alerts.py`, `tests/test_quality.py` (guardrails)
   - `README.md`, `AI_LOG.md`, `.gitignore`, `.dockerignore`, `Dockerfile`, `docker-compose.yml`, `requirements.txt`, `pytest.ini`, `setup.cfg`
   - `docs/EDA.md`, `docs/apresentacao.md`, `docs/recomendacao.md`
   - `catalog/gold.yml`, `pipeline/*.py`, `sql/silver/*.sql`, `sql/gold/*.sql`, `tests/*.py`, `agent/*.py`, `app/dashboard.py`

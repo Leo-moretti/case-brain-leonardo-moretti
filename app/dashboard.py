@@ -33,7 +33,9 @@ camp = q("SELECT * FROM gold_campanha_pix ORDER BY grupo")
 brk = q("SELECT * FROM gold_breakage")
 
 st.title("Pontua+ · Painel da diretoria")
-st.caption("Dados de 01/10/2025 a 30/09/2026 · resgates = itens APROVADOS · Pix lançado em 27/05/2026")
+versao_dados = q("SELECT MAX(run_id) v FROM dq_resultados").v.iloc[0]
+st.caption("Dados de 01/10/2025 a 30/09/2026 · resgates = itens APROVADOS · Pix lançado em 27/05/2026 · "
+           f"**valores gerenciais, não contábeis** · versão dos dados: `{versao_dados}`")
 
 ult = metas.iloc[-1]
 c1, c2, c3, c4, c5 = st.columns(5)
@@ -43,7 +45,13 @@ c3.metric("Pix (set/26)", f"{ult.pix_pct:.1f}%")
 c4.metric("Pontos resgatados (set/26)", f"{ult.pontos_total / 1e6:.1f} M")
 c5.metric("Passivo de pontos", f"{pontos.saldo_acumulado.iloc[-1] / 1e6:.0f} M")
 
-abas = st.tabs(["Metas", "Resgates e custo", "Pix e CRM", "Saldo e breakage", "Conciliação operador", "Pergunte aos dados"])
+dq = q("SELECT check_id, camada, severidade, status, valor, regra, descricao, executado_em FROM dq_resultados")
+dq_falhas = dq[dq.status != "ok"]
+if (dq_falhas.severidade == "alerta").any():
+    st.warning(f"Qualidade de dados: {(dq_falhas.severidade == 'alerta').sum()} alerta(s) na última carga. Veja a aba 'Qualidade de dados'.")
+
+abas = st.tabs(["Metas", "Resgates e custo", "Pix e CRM", "Saldo e breakage", "Conciliação operador",
+                "Qualidade de dados", "Pergunte aos dados"])
 
 with abas[0]:
     st.subheader("Participação nos pontos resgatados")
@@ -102,6 +110,16 @@ with abas[4]:
                "daí os ~R$ 0,016/ponto. A taxa real é R$ 0,019.")
 
 with abas[5]:
+    st.subheader("Guardrails de qualidade da última carga")
+    st.caption(f"Executado em {dq.executado_em.iloc[0]} (UTC) · checks definidos em quality/checks.yml · "
+               "bloqueante interrompe a carga e mantém a versão anterior publicada")
+    a, b, c = st.columns(3)
+    a.metric("Checks executados", len(dq))
+    b.metric("Alertas", int((dq_falhas.severidade == "alerta").sum()))
+    c.metric("Bloqueantes", int((dq_falhas.severidade == "bloqueante").sum()))
+    st.dataframe(dq.sort_values(["status", "camada"]).drop(columns="executado_em").astype({"valor": str}), hide_index=True)
+
+with abas[6]:
     st.subheader("Pergunte aos dados")
     st.caption("O agente consulta só a camada gold e cita ressalvas. Requer GEMINI_API_KEY (ou LLM_PROVIDER=ollama).")
     pergunta = st.text_input("Pergunta", placeholder="Ex.: quantos usuários usaram Pix em agosto?")
@@ -117,4 +135,6 @@ with abas[5]:
                     st.code(out["sql"], language="sql")
                     st.dataframe(pd.DataFrame(out["linhas"], columns=out["colunas"]), hide_index=True)
         except Exception as e:
-            st.error(f"Agente indisponível: {e}")
+            # detalhe técnico fica na trilha de auditoria, não na tela
+            print(f"erro do agente: {type(e).__name__}: {e}", file=sys.stderr)
+            st.error("Agente indisponível no momento. A tentativa foi registrada na trilha de auditoria.")

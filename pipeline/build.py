@@ -1,15 +1,25 @@
 """Constrói o warehouse SQLite: bronze (CSV bruto) -> silver (tipado e limpo) -> gold (métricas).
 
+Cada camada passa pelos guardrails de quality/checks.yml. O build escreve num arquivo temporário e só
+substitui o warehouse publicado se nenhum check bloqueante falhar: dashboard e agente nunca leem dados quebrados.
+
 Uso: python -m pipeline.build [--dados dados] [--db warehouse/pontua.db]
 """
 import argparse
 import csv
 import hashlib
+import json
+import os
 import sqlite3
+import sys
+from dataclasses import asdict
 from datetime import datetime, timezone
 from pathlib import Path
 
 import yaml
+
+from pipeline import quality
+from pipeline.alerts import get_notifier
 
 ROOT = Path(__file__).resolve().parent.parent
 SQL_DIR = ROOT / "sql"
@@ -29,17 +39,25 @@ def sha256(path: Path) -> str:
     return h.hexdigest()
 
 
-def check_manifest(dados: Path) -> None:
+def check_manifest(dados: Path, run_id: str) -> list[quality.Resultado]:
+    """Arquivo ausente bloqueia; hash diferente do manifesto é alerta (nova carga legítima ou arquivo alterado)."""
+    out = []
     with open(ROOT / "MANIFESTO_v1.csv", encoding="utf-8") as f:
         for row in csv.DictReader(f):
             path = dados / row["arquivo"]
-            if sha256(path) != row["sha256"]:
-                raise SystemExit(f"{row['arquivo']}: SHA-256 diferente do MANIFESTO_v1.csv")
+            if not path.exists():
+                out.append(quality.Resultado(run_id, f"arquivo_{row['arquivo']}", "entrada", "bloqueante",
+                                             f"{row['arquivo']} ausente", None, "existe", "falha"))
+                continue
+            igual = sha256(path) == row["sha256"]
+            out.append(quality.Resultado(run_id, f"manifesto_{row['arquivo']}", "entrada", "alerta",
+                                         f"SHA-256 de {row['arquivo']} " + ("igual ao" if igual else "diferente do")
+                                         + " MANIFESTO_v1", int(not igual), "= 0", "ok" if igual else "falha"))
+    return out
 
 
-def load_bronze(con: sqlite3.Connection, dados: Path) -> None:
+def load_bronze(con: sqlite3.Connection, dados: Path, loaded_at: str) -> None:
     """Bronze: cópia fiel do CSV, tudo TEXT, string vazia -> NULL, mais colunas de linhagem."""
-    loaded_at = datetime.now(timezone.utc).isoformat(timespec="seconds")
     for name in SOURCES:
         path = dados / f"{name}.csv"
         with open(path, encoding="utf-8", newline="") as f:
@@ -82,20 +100,51 @@ def load_catalog(con: sqlite3.Connection) -> None:
         )
 
 
+def _historico(db: Path, resultados: list[quality.Resultado], executado_em: str, publicado: bool) -> None:
+    with open(db.parent / "dq_historico.jsonl", "a", encoding="utf-8") as f:
+        for r in resultados:
+            f.write(json.dumps({**asdict(r), "executado_em": executado_em, "publicado": publicado},
+                               ensure_ascii=False) + "\n")
+
+
 def build(dados: Path, db: Path) -> Path:
-    check_manifest(dados)
     db.parent.mkdir(parents=True, exist_ok=True)
-    if db.exists():
-        db.unlink()
-    con = sqlite3.connect(db)
+    executado_em = datetime.now(timezone.utc).isoformat(timespec="seconds")
+    run_id = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S%f")
+    notifier = get_notifier(db.parent)
+    spec = quality.load_spec()
+    tmp = db.with_suffix(".tmp.db")
+    tmp.unlink(missing_ok=True)
+    resultados: list[quality.Resultado] = []
+
+    con = sqlite3.connect(tmp)
     try:
-        load_bronze(con, dados)
-        run_sql_layer(con, "silver")
-        run_sql_layer(con, "gold")
+        etapa = check_manifest(dados, run_id)
+        resultados += etapa
+        quality.notify_and_gate(etapa, notifier)
+
+        load_bronze(con, dados, executado_em)
+        etapa = quality.run_contracts(con, spec, run_id) + quality.run_layer(con, spec, "bronze", run_id)
+        resultados += etapa
+        quality.notify_and_gate(etapa, notifier)
+
+        for camada in ("silver", "gold"):
+            run_sql_layer(con, camada)
+            etapa = quality.run_layer(con, spec, camada, run_id)
+            resultados += etapa
+            quality.notify_and_gate(etapa, notifier)
+
         load_catalog(con)
+        quality.persist(con, resultados, executado_em)
         con.commit()
-    finally:
+    except quality.QualidadeBloqueante:
         con.close()
+        tmp.unlink(missing_ok=True)
+        _historico(db, resultados, executado_em, publicado=False)
+        raise
+    con.close()
+    os.replace(tmp, db)  # publicação atômica
+    _historico(db, resultados, executado_em, publicado=True)
     return db
 
 
@@ -104,7 +153,11 @@ def main() -> None:
     parser.add_argument("--dados", default=str(ROOT / "dados"))
     parser.add_argument("--db", default=str(ROOT / "warehouse" / "pontua.db"))
     args = parser.parse_args()
-    db = build(Path(args.dados), Path(args.db))
+    try:
+        db = build(Path(args.dados), Path(args.db))
+    except quality.QualidadeBloqueante as e:
+        print(f"BUILD INTERROMPIDO: {e}. Warehouse publicado anterior mantido.", file=sys.stderr)
+        sys.exit(1)
     print(f"warehouse pronto: {db}")
 
 

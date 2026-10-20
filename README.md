@@ -22,12 +22,12 @@ GEMINI_API_KEY=<sua_chave> docker compose up --build
 python -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
 python -m pipeline.build          # CSVs -> warehouse/pontua.db (bronze, silver, gold)
-python -m pytest                  # 54 testes
+python -m pytest                  # 70 testes (~2 min)
 python -m pipeline.eda            # imprime todos os números citados na apresentação
 streamlit run app/dashboard.py    # dashboard + agente
 ```
 
-Os CSVs ficam em `dados/`, como vieram. O build confere o SHA-256 de cada arquivo contra `MANIFESTO_v1.csv` e para se algo diferir.
+Os CSVs ficam em `dados/`, como vieram. O build confere o SHA-256 de cada arquivo contra `MANIFESTO_v1.csv` (diferença gera alerta, não bloqueio, para aceitar novas cargas) e roda os guardrails de qualidade descritos abaixo.
 
 **Variáveis de ambiente do agente** (podem ir num `.env`, que está no `.gitignore`):
 
@@ -54,6 +54,7 @@ Sem chave, o dashboard funciona normalmente e só a aba "Pergunte aos dados" mos
 | Catálogo semântico (dashboard + agente) | [catalog/gold.yml](catalog/gold.yml) |
 | Agente | [agent/core.py](agent/core.py) |
 | Registro de uso de IA | [AI_LOG.md](AI_LOG.md) |
+| Segurança, privacidade (LGPD) e auditabilidade | [docs/SEGURANCA_COMPLIANCE.md](docs/SEGURANCA_COMPLIANCE.md) |
 
 ## Respostas em resumo
 
@@ -148,7 +149,7 @@ Outros exemplos esperados (ainda não executados):
 
 ## Testes
 
-São 54 testes (`python -m pytest`), que reconstroem o warehouse do zero a partir dos CSVs:
+São 70 testes (`python -m pytest`, ~2 min), que reconstroem o warehouse do zero a partir dos CSVs:
 - **Carga:** contagem de linhas por arquivo = manifesto. O hash é verificado no build.
 - **Chaves:** unicidade e não nulidade da chave de cada modelo silver/gold; grão de `gold_resgates_mensal`.
 - **Integridade referencial:** item → pedido, ledger → cartões, um cartão mais recente por usuário, códigos de operação conhecidos, nenhum usuário sem resolução.
@@ -162,6 +163,46 @@ São 54 testes (`python -m pytest`), que reconstroem o warehouse do zero a parti
   - percentuais somam 100.
 - **Valores de referência da apresentação:** taxa do Pix, metas de abril, junho e setembro, lote de 12/01, grupos da campanha, critério do relatório do operador.
 - **Segurança do agente:** o validador de SQL bloqueia DML, DDL, múltiplas instruções e tabelas fora da gold.
+
+## Guardrails de qualidade de dados
+
+Os problemas encontrados na EDA mostram que este processo quebra com facilidade ou, pior, entrega número errado sem quebrar. Exemplos:
+- um status novo sumiria das métricas;
+- um timestamp em UTC deslocaria o mês;
+- uma carga reenviada duplicaria resgates.
+
+Por isso o build passa por guardrails a cada camada.
+
+```
+CSVs ─► entrada (arquivo existe, hash) ─► bronze (contrato de colunas, chaves, domínios, formatos)
+     ─► silver (integridade, resolução de usuário, sinais) ─► gold (conciliações, anomalias)
+     ─► tudo ok? ── sim ─► publica o warehouse (troca atômica do arquivo)
+                    não ─► interrompe, mantém a versão anterior, dispara alerta
+```
+
+- **Escalável:** os 48 checks ficam em [quality/checks.yml](quality/checks.yml). Cada um é um SQL que devolve um número, com uma regra (`igual`, `max` ou `min`) e uma severidade. Para criar um check novo basta acrescentar uma entrada no YAML, sem mexer em código.
+- **Severidades:**
+  - **bloqueante**: interrompe a carga. Usada para contrato, chaves, domínios, formato de data e conciliações.
+  - **alerta**: avisa e segue. Usada para mudança de taxa do Pix, picos de volume, divergência do relatório do operador e piora de problemas conhecidos.
+  - **info**: só registra.
+- **Problemas conhecidos calibrados:** os problemas da v1 têm limites calibrados para alertar quando **piorarem**. Exemplos: contas com saldo negativo (7,5%, limite de 8%) e expiração de migração sem crédito (22,9%, limite de 25%).
+- **Integridade:** o build escreve num arquivo temporário e só faz `os.replace` se nada bloqueante falhar. Dashboard e agente nunca leem uma carga quebrada.
+- **Alerta (POC):** canal dummy em [pipeline/alerts.py](pipeline/alerts.py), que grava em `warehouse/alertas.jsonl` e imprime no stderr. Para usar Slack ou e-mail, basta implementar `Notifier` e escolher o canal por `DQ_ALERT_CHANNEL`.
+- **Observabilidade:**
+  - os resultados da última carga ficam em `dq_resultados`, no próprio warehouse, e aparecem na aba "Qualidade de dados" do dashboard;
+  - o agente também consulta `dq_resultados` e pode citar alertas ao responder;
+  - o histórico de todas as execuções, inclusive as interrompidas, fica em `warehouse/dq_historico.jsonl`.
+- **Na v1:** 48 checks, nenhum bloqueante falha. Um alerta real dispara: o relatório do operador diverge 22,7% nos pontos Pix.
+- **Detector de picos:** valida dias com mais de 10× a mediana diária da modalidade. Sem a exclusão do lote conhecido, ele pega exatamente 12/01/2026 (1.520 itens contra a mediana de 21) e nenhum outro dia.
+- **Testes ([tests/test_quality.py](tests/test_quality.py)):** simulam cargas corrompidas e verificam que a carga é bloqueada, que o warehouse anterior fica intacto e que o alerta é gerado. Cenários: status novo, coluna renomeada, item duplicado, timestamp em UTC e arquivo ausente. Também simulam uma mudança da taxa do Pix e verificam que ela só gera alerta e publica.
+
+## Segurança e auditabilidade
+
+Detalhes e lacunas para produção em [docs/SEGURANCA_COMPLIANCE.md](docs/SEGURANCA_COMPLIANCE.md). Em resumo:
+- **Nenhum dado pessoal direto nos dados.** Os IDs pseudonimizados não saem pelo agente: uma guarda determinística bloqueia o resultado se ele contiver um ID real de cliente ou pedido, antes de enviar à LLM.
+- **Trilha de auditoria do agente** em `warehouse/auditoria_agente.jsonl`. Cada pergunta registra modelo, versão dos dados, SQL, hash do resultado, resposta e status.
+- **Indicação de origem e versão:** dashboard e respostas mostram "valores gerenciais, não contábeis" e a versão dos dados (`run_id`).
+- **Rede e erros:** a porta do container fica só em `127.0.0.1`; o erro do agente não expõe detalhes internos.
 
 ## Confirmado × hipótese
 
@@ -196,7 +237,7 @@ Veja as seções 5 e 6 de [docs/EDA.md](docs/EDA.md). As principais:
 
 - O deploy em serverless (ex.: Vercel) não suporta Streamlit. A entrega suportada é o contêiner (Docker, Render, Cloud Run, Fly). Para Vercel, o próximo passo seria expor o agente como função HTTP e o dashboard como página estática gerada a partir da camada gold.
 - O agente foi validado manualmente com `gemini-3.8-flash`: respostas concisas, sem dados inventados, com as proteções funcionando. O validador de SQL tem testes automatizados; a qualidade das respostas do LLM, não (depende do modelo).
-- A imagem Docker foi construída e executada localmente; o build roda o pipeline e os 54 testes.
+- A imagem Docker foi construída e executada localmente; o build roda o pipeline, os guardrails e os testes.
 
 ## Tempo e uso de IA
 

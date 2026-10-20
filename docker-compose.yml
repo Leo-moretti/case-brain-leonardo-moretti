@@ -2,7 +2,8 @@ services:
   pontua:
     build: .
     ports:
-      - "8501:8501"
+      # só localhost: o painel não tem autenticação. Para expor, colocar atrás de proxy com SSO
+      - "127.0.0.1:8501:8501"
     environment:
       - LLM_PROVIDER=${LLM_PROVIDER:-gemini}
       - GEMINI_API_KEY=${GEMINI_API_KEY:-}

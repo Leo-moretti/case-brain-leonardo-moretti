@@ -144,6 +144,20 @@ tabelas:
       resgatadores_previos_pct: "% do grupo que já resgatava antes do Pix (checa viés de seleção)."
       usuarios_pix_antes_do_email: "Usuários que usaram Pix antes do primeiro envio da campanha."
 
+  dq_resultados:
+    grao: "1 linha por check de qualidade da última carga"
+    descricao: "Resultado dos guardrails de qualidade de dados. Consulte quando a pergunta for sobre confiabilidade dos dados ou se houver alerta relevante para a resposta."
+    colunas:
+      run_id: "Identificador da execução."
+      executado_em: "Data/hora da execução (UTC)."
+      check_id: "Identificador do check (ver quality/checks.yml)."
+      camada: "entrada, bronze, silver ou gold."
+      severidade: "bloqueante (interrompe a carga), alerta ou info."
+      descricao: "O que o check verifica."
+      valor: "Valor medido."
+      regra: "Regra esperada (= / <= / >=)."
+      status: "ok, falha ou erro."
+
   gold_breakage:
     grao: "1 linha por métrica candidata"
     descricao: "Métricas candidatas de breakage e por que nenhuma reproduz os 40% citados."
